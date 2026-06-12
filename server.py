@@ -73,6 +73,7 @@ PLUTO_REGION_MAP    = _parse_lang_map(os.environ.get("PLUTO_REGION_MAP", "es:ES,
 PLUTO_XFF_MAP       = _parse_lang_map(os.environ.get("PLUTO_XFF_MAP", "en:8.8.8.8"))
 LOCAL_MEDIA_DIR     = os.environ.get("LOCAL_MEDIA_DIR", "/media/videos")
 IPTV_LISTS_DIR      = os.environ.get("IPTV_LISTS_DIR", "/iptv_lists")
+MAX_STREAM_AGE_S    = int(os.environ.get("MAX_STREAM_AGE_S", str(5 * 3600)))  # stop streams older than this
 LOCAL_MEDIA_EXTS    = {
     ".mp4", ".mkv", ".webm", ".avi", ".mov", ".m4v", ".mpg", ".mpeg", ".ts",
 }
@@ -196,6 +197,18 @@ class Registry:
                 self._streams[sid].stop()
                 del self._streams[sid]
                 log.info(f"Cleaned up stream {sid}")
+
+    def cleanup_old(self):
+        """Stop and remove streams that have been active longer than MAX_STREAM_AGE_S."""
+        cutoff = time.time() - MAX_STREAM_AGE_S
+        with self._lock:
+            old = [sid for sid, s in self._streams.items()
+                   if s.created_at < cutoff and s.status in ("starting", "streaming")]
+            for sid in old:
+                log.info(f"Auto-stopping stream {sid} (age limit reached)")
+                self._streams[sid].stop()
+                self._streams[sid].status = "done"
+                del self._streams[sid]
 
 
 registry = Registry()
@@ -3699,6 +3712,12 @@ def main():
     log.info("═" * 52)
 
     pluto_cache.start_background_refresh()
+
+    def _stream_reaper():
+        while True:
+            time.sleep(60)
+            registry.cleanup_old()
+    threading.Thread(target=_stream_reaper, daemon=True).start()
 
     server = ThreadedHTTPServer((HOST, PORT), Handler)
 
