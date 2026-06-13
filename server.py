@@ -727,10 +727,16 @@ def _load_home_feed_disk_cache() -> None:
         if os.path.isfile(HOME_FEED_CACHE_FILE):
             with open(HOME_FEED_CACHE_FILE, encoding="utf-8") as f:
                 data = json.load(f)
-            if data.get("videos") and data.get("built_at"):
-                _home_feed_cache["videos"]   = data["videos"]
+            videos = data.get("videos") or []
+            if videos and data.get("built_at"):
+                # Sort newest-first so even old caches are served correctly
+                dated   = [v for v in videos if v.get("upload_date")]
+                undated = [v for v in videos if not v.get("upload_date")]
+                dated.sort(key=lambda v: v["upload_date"], reverse=True)
+                videos = dated + undated
+                _home_feed_cache["videos"]   = videos
                 _home_feed_cache["built_at"] = float(data["built_at"])
-                log.info(f"Loaded home feed cache from disk: {len(data['videos'])} videos")
+                log.info(f"Loaded home feed cache from disk: {len(videos)} videos ({len(dated)} dated)")
     except Exception as e:
         log.warning(f"Could not load home feed disk cache: {e}")
 
@@ -814,18 +820,9 @@ def _build_home_feed(channels: list[dict]) -> list[dict]:
             except Exception:
                 pass
 
-    # Sort newest-first by upload_date; videos without a date sort by fetch
-    # position (0=newest per channel) so undated videos interleave naturally.
-    all_videos.sort(key=lambda v: (
-        0 if v.get("upload_date") else 1,
-        v.get("upload_date") or "",
-        -v.get("fetch_idx", 0),
-    ), reverse=False)
-    # flip: dated ones should be descending, undated ones ascending by fetch_idx
     dated   = [v for v in all_videos if v.get("upload_date")]
     undated = [v for v in all_videos if not v.get("upload_date")]
-    dated.sort(key=lambda v: v["upload_date"], reverse=True)
-    undated.sort(key=lambda v: v.get("fetch_idx", 0))
+    dated.sort(key=lambda v: v["upload_date"], reverse=True)  # newest first
     return dated + undated
 
 
@@ -3577,6 +3574,8 @@ class Handler(BaseHTTPRequestHandler):
                 quality=None,
                 reuse_existing=False,
             )
+            if not stream.title:
+                stream.title = os.path.splitext(os.path.basename(local_file))[0]
             if seek_s > 0:
                 stream.seek_s = float(seek_s)
             # Warm local playback so configured sync delay reflects timeline
@@ -3626,6 +3625,11 @@ class Handler(BaseHTTPRequestHandler):
                 quality=None,
                 reuse_existing=False,
             )
+            if not stream.title:
+                with pluto_cache._lock:
+                    ch = next((c for c in pluto_cache._by_lang.get(lang, []) if c.get("id") == channel_id), None)
+                if ch:
+                    stream.title = ch["name"]
             self._html(render_watch_page(stream.id, sync_ms))
 
         elif path == "/stream_status":
