@@ -1478,11 +1478,10 @@ STATUS_HTML = """<!DOCTYPE html>
   .feed-controls button{background:var(--red);color:white;border:0;border-radius:8px;padding:12px 20px;font-family:'Orbitron',monospace;letter-spacing:.08em;cursor:pointer;white-space:nowrap;font-size:.8rem;}
   .feed-status{color:var(--muted);font-size:.9rem;font-style:italic;margin-bottom:12px;min-height:1.4em;}
   .feed-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:18px;}
-  .feed-card{background:var(--input-bg);border:1px solid var(--border);border-radius:10px;overflow:hidden;cursor:pointer;transition:border-color .15s;position:relative;}
+  .feed-card{background:var(--input-bg);border:1px solid var(--border);border-radius:10px;overflow:hidden;cursor:pointer;transition:border-color .15s;}
   .feed-card:hover{border-color:var(--red);}
-  .feed-card-dismiss{position:absolute;top:6px;right:6px;width:22px;height:22px;background:rgba(0,0,0,.65);border:none;border-radius:50%;color:#fff;font-size:13px;line-height:22px;text-align:center;cursor:pointer;z-index:10;display:none;padding:0;}
-  .feed-card:hover .feed-card-dismiss{display:block;}
-  .feed-card-dismiss:hover{background:var(--red);}
+  .feed-card-dismiss{background:none;border:none;color:var(--muted);font-size:14px;line-height:1;cursor:pointer;padding:0 0 0 6px;flex-shrink:0;}
+  .feed-card-dismiss:hover{color:var(--red);}
   .feed-thumb{width:100%;aspect-ratio:16/9;object-fit:cover;background:var(--thumb-bg);display:block;}
   .feed-info{padding:10px 13px;}
   .feed-title{font-size:.9rem;line-height:1.35;color:var(--text);margin-bottom:5px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;}
@@ -2364,10 +2363,12 @@ STATUS_HTML = """<!DOCTYPE html>
       dateStr = v.upload_date.slice(0,4) + "-" + v.upload_date.slice(4,6) + "-" + v.upload_date.slice(6,8);
     }
     card.innerHTML =
-      '<button class="feed-card-dismiss" title="Dismiss">✕</button>' +
       '<img class="feed-thumb" src="' + (v.thumb || "") + '" loading="lazy" alt="">' +
       '<div class="feed-info">' +
-      '<div class="feed-title">' + escHtml(v.title) + '</div>' +
+      '<div style="display:flex;align-items:flex-start;gap:4px;">' +
+      '<div class="feed-title" style="flex:1;">' + escHtml(v.title) + '</div>' +
+      '<button class="feed-card-dismiss" title="Dismiss">✕</button>' +
+      '</div>' +
       '<div style="display:flex;justify-content:space-between;align-items:center;margin-top:4px;">' +
       '<div style="font-size:.75rem;color:var(--red);font-family:Orbitron,monospace;letter-spacing:.04em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:60%;">' + escHtml(v.channel || "") + '</div>' +
       '<div style="font-family:monospace;font-size:.75rem;color:var(--muted);white-space:nowrap;">' +
@@ -3094,6 +3095,7 @@ WATCH_HTML = """<!DOCTYPE html>
   .seek-pending{font-family:monospace;font-size:.9rem;color:var(--red);min-width:80px;}
   .seek-cancel{background:none;border:none;color:#888;font-size:.8rem;cursor:pointer;text-decoration:underline;padding:0;}
   .elapsed{font-family:monospace;font-size:1rem;color:var(--text);margin-left:auto;letter-spacing:.05em;}
+  .live-badge{font-family:'Orbitron',monospace;font-size:.65rem;letter-spacing:.12em;color:#fff;background:var(--red);padding:2px 7px;border-radius:3px;text-transform:uppercase;margin-left:auto;display:none;}
   .resume-banner{margin-top:10px;padding:10px 14px;background:#1a1200;border:1px solid #6b4f00;border-radius:6px;font-size:.9rem;display:flex;align-items:center;gap:12px;flex-wrap:wrap;}
   .resume-banner a{color:#f5c518;font-weight:600;cursor:pointer;text-decoration:underline;}
   .resume-banner .dismiss{color:#888;font-size:.8rem;cursor:pointer;text-decoration:underline;background:none;border:none;}
@@ -3131,6 +3133,7 @@ WATCH_HTML = """<!DOCTYPE html>
       <button class="seek-btn" data-mins="10">+10 min</button>
       <span id="seek-pending" class="seek-pending"></span>
       <button id="seek-cancel" class="seek-cancel" style="display:none">cancel</button>
+      <span id="live-badge" class="live-badge">● Live</span>
       <span id="elapsed" class="elapsed">0:00:00</span>
     </div>
     <div id="resume-banner" class="resume-banner" style="display:none">
@@ -3158,6 +3161,7 @@ WATCH_HTML = """<!DOCTYPE html>
   var seekPending  = document.getElementById("seek-pending");
   var seekCancel   = document.getElementById("seek-cancel");
   var elapsedEl    = document.getElementById("elapsed");
+  var liveBadgeEl  = document.getElementById("live-badge");
   var resumeBanner = document.getElementById("resume-banner");
   var resumeText   = document.getElementById("resume-text");
   var resumeYes    = document.getElementById("resume-yes");
@@ -3187,6 +3191,13 @@ WATCH_HTML = """<!DOCTYPE html>
   window.addEventListener("click", retryPlay, true);
   window.addEventListener("touchstart", retryPlay, true);
   window.addEventListener("keydown", retryPlay, true);
+
+  audio.addEventListener("loadedmetadata", function () {
+    if (!isFinite(audio.duration)) {
+      if (liveBadgeEl) liveBadgeEl.style.display = "inline-block";
+      if (elapsedEl)   elapsedEl.style.display    = "none";
+    }
+  });
 
   // ── Real-time audio delay control ───────────────────────────────────────
   var syncValEl   = document.getElementById("sync-val");
