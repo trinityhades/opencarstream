@@ -1098,23 +1098,27 @@ def run_pipeline(stream: Stream):
         for attempt_idx, fmt in enumerate(_format_candidates(stream.quality), start=1):
             yt_proc = None
 
-            if stream.seek_s > 0:
-                # Resolve direct CDN URL so ffmpeg can seek via HTTP ranges.
-                url_r = subprocess.run(
-                    ["yt-dlp", "--js-runtimes", "node", "--no-playlist",
-                     "-f", fmt, "--get-url", "--quiet", stream.url],
-                    capture_output=True, text=True, timeout=30,
-                )
-                direct_url = url_r.stdout.strip().splitlines()[0] if url_r.returncode == 0 else ""
-                if not direct_url:
-                    attempt_errors.append(
-                        f"attempt={attempt_idx} fmt={fmt} yt-dlp --get-url failed: {url_r.stderr.strip()}"
-                    )
-                    continue
+            # Always resolve a direct CDN URL first. This lets ffmpeg download
+            # at real-time speed (-re) instead of letting yt-dlp race ahead and
+            # buffer gigabytes into a pipe — which breaks long videos.
+            url_r = subprocess.run(
+                ["yt-dlp", "--js-runtimes", "node", "--no-playlist",
+                 "-f", fmt, "--get-url", "--quiet", stream.url],
+                capture_output=True, text=True, timeout=30,
+            )
+            direct_url = url_r.stdout.strip().splitlines()[0] if url_r.returncode == 0 else ""
+
+            if direct_url:
+                seek_args = ["-ss", str(int(stream.seek_s))] if stream.seek_s > 0 else []
                 ff_cmd = [
                     "ffmpeg",
                     "-loglevel", "error",
-                    "-ss", str(int(stream.seek_s)),
+                    # Reconnect on brief network drops without restarting the stream
+                    "-reconnect", "1",
+                    "-reconnect_streamed", "1",
+                    "-reconnect_delay_max", "10",
+                    *seek_args,
+                    "-re",   # read input at real-time pace — never buffers ahead
                     "-i", direct_url,
                     "-vf", (
                         f"scale={STREAM_WIDTH}:{STREAM_HEIGHT}"
@@ -1131,6 +1135,13 @@ def run_pipeline(stream: Stream):
                 ]
                 ff_proc = subprocess.Popen(ff_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
             else:
+                # Fallback: pipe yt-dlp → ffmpeg (no seek support, may buffer on long videos)
+                if stream.seek_s > 0:
+                    attempt_errors.append(
+                        f"attempt={attempt_idx} fmt={fmt} yt-dlp --get-url failed (seek requires direct URL): {url_r.stderr.strip()}"
+                    )
+                    continue
+                log.warning(f"[{stream.id}] --get-url failed for fmt={fmt}, falling back to pipe")
                 yt_cmd = [
                     "yt-dlp",
                     "--js-runtimes", "node",
@@ -4058,45 +4069,43 @@ class Handler(BaseHTTPRequestHandler):
 
     @staticmethod
     def _launch_audio_pipeline(url: str, seek_s: float):
-        """Spawn yt-dlp | ffmpeg for audio starting at seek_s seconds."""
-        if seek_s > 0:
-            # Resolve direct URL so ffmpeg can seek via HTTP ranges.
-            url_r = subprocess.run(
-                ["yt-dlp", "--js-runtimes", "node", "--no-playlist",
-                 "-f", "bestaudio[ext=m4a]/bestaudio", "--get-url", "--quiet", url],
-                capture_output=True, text=True, timeout=30,
-            )
-            direct_url = url_r.stdout.strip().splitlines()[0] if url_r.returncode == 0 else ""
-            if direct_url:
-                ff_cmd = [
-                    "ffmpeg", "-loglevel", "error",
-                    "-ss", str(int(seek_s)),
-                    "-i", direct_url,
-                    "-vn",
-                    "-af", "aresample=async=1:first_pts=0",
-                    "-c:a", "mp3", "-b:a", "128k", "-f", "mp3", "pipe:1",
-                ]
-                ff_proc = subprocess.Popen(ff_cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
-                return None, ff_proc
+        """Spawn ffmpeg for audio starting at seek_s seconds.
+        Always resolves a direct CDN URL first so ffmpeg reads at real-time
+        pace and never buffers a whole long video into a pipe."""
+        audio_fmt = "bestaudio[ext=m4a]/bestaudio"
+        url_r = subprocess.run(
+            ["yt-dlp", "--js-runtimes", "node", "--no-playlist",
+             "-f", audio_fmt, "--get-url", "--quiet", url],
+            capture_output=True, text=True, timeout=30,
+        )
+        direct_url = url_r.stdout.strip().splitlines()[0] if url_r.returncode == 0 else ""
+
+        if direct_url:
+            seek_args = ["-ss", str(int(seek_s))] if seek_s > 0 else []
+            ff_cmd = [
+                "ffmpeg", "-loglevel", "error",
+                "-reconnect", "1",
+                "-reconnect_streamed", "1",
+                "-reconnect_delay_max", "10",
+                *seek_args,
+                "-i", direct_url,
+                "-vn",
+                "-af", "aresample=async=1:first_pts=0",
+                "-c:a", "mp3", "-b:a", "128k", "-f", "mp3", "pipe:1",
+            ]
+            ff_proc = subprocess.Popen(ff_cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+            return None, ff_proc
+
+        # Fallback: pipe yt-dlp → ffmpeg
         yt_cmd = [
-            "yt-dlp",
-            "--js-runtimes", "node",
-            "--no-playlist",
-            "-f", "bestaudio[ext=m4a]/bestaudio",
-            "-o", "-",
-            "--quiet",
-            url,
+            "yt-dlp", "--js-runtimes", "node", "--no-playlist",
+            "-f", audio_fmt, "-o", "-", "--quiet", url,
         ]
         ff_cmd = [
-            "ffmpeg",
-            "-loglevel", "error",
-            "-i", "pipe:0",
-            "-vn",
+            "ffmpeg", "-loglevel", "error",
+            "-i", "pipe:0", "-vn",
             "-af", "aresample=async=1:first_pts=0",
-            "-c:a", "mp3",
-            "-b:a", "128k",
-            "-f", "mp3",
-            "pipe:1",
+            "-c:a", "mp3", "-b:a", "128k", "-f", "mp3", "pipe:1",
         ]
         yt_proc = subprocess.Popen(yt_cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
         ff_proc = subprocess.Popen(ff_cmd, stdin=yt_proc.stdout,
