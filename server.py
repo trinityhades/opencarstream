@@ -1004,13 +1004,14 @@ def _resolve_mp4_url(url: str, quality: int | None) -> tuple[str, str]:
         local_path = _ffmpeg_input_target(url)
         return "/file_serve?path=" + quote(local_path, safe=""), ""
 
-    # RTP/UDP/RTSP: no browser support
-    if _is_rtp_stream(url):
-        return "", "RTP/UDP/RTSP streams cannot be played natively in the browser"
-
-    # HLS, IPTV (LAN HTTP), Acestream proxy — browser can load these directly
-    if _is_direct_stream(url):
+    # HLS manifests — most browsers (including Tesla/WebKit) play these natively
+    if _is_direct_hls(url):
         return url, ""
+
+    # Acestream, RTP/UDP/RTSP, LAN MPEG-TS — browser can't play these natively;
+    # transcode to fragmented MP4 on the fly via /stream_fmp4
+    if _is_acestream(url) or _is_rtp_stream(url) or _is_local_network_stream(url):
+        return "/stream_fmp4?url=" + quote(url, safe=""), ""
 
     # YouTube, Twitch, etc: resolve a direct CDN URL via yt-dlp
     fmt = (
@@ -1034,11 +1035,18 @@ def _resolve_mp4_url(url: str, quality: int | None) -> tuple[str, str]:
 
 
 def _start_audio_buffer(stream: Stream):
-    """Spawn a dedicated ffmpeg process to fill stream._audio_chunks with MP3."""
+    """Spawn a dedicated ffmpeg process to fill stream._audio_chunks with MP3.
+    Used by the normal MJPEG pipeline for direct HLS streams."""
+    extra = []
+    if _is_acestream(stream.url) or _is_local_network_stream(stream.url):
+        extra = ["-probesize", "20M", "-analyzeduration", "10M"]
+    seek_args = ["-ss", str(int(stream.seek_s))] if stream.seek_s > 0 else []
     audio_cmd = [
         "ffmpeg",
         "-loglevel", "error",
         *_direct_input_args(stream.url),
+        *seek_args,
+        *extra,
         "-i", _ffmpeg_input_target(stream.url),
         "-vn",
         "-af", "aresample=async=1:first_pts=0",
@@ -1070,6 +1078,82 @@ def _start_audio_buffer(stream: Stream):
             with stream._audio_lock:
                 stream._audio_done = True
             stream._audio_ready.set()
+
+    threading.Thread(target=_drain, daemon=True).start()
+
+
+def _start_audio_buffer_any(stream: Stream):
+    """Fill stream._audio_chunks with MP3 for any stream type (audio-only mode).
+    For direct streams uses ffmpeg directly; for YouTube/Twitch uses yt-dlp first."""
+    if _is_direct_stream(stream.url):
+        _start_audio_buffer(stream)
+        return
+
+    # Non-direct (YouTube, Twitch, etc): resolve audio URL via yt-dlp first
+    audio_fmt = "bestaudio[ext=m4a]/bestaudio"
+    seek_args: list[str] = ["-ss", str(int(stream.seek_s))] if stream.seek_s > 0 else []
+    try:
+        url_r = subprocess.run(
+            ["yt-dlp", "--js-runtimes", "node", "--no-playlist",
+             "-f", audio_fmt, "--get-url", "--quiet", stream.url],
+            capture_output=True, text=True, timeout=30,
+        )
+        direct_url = url_r.stdout.strip().splitlines()[0] if url_r.returncode == 0 else ""
+    except Exception:
+        direct_url = ""
+
+    if direct_url:
+        ff_cmd = [
+            "ffmpeg", "-loglevel", "error",
+            "-reconnect", "1", "-reconnect_streamed", "1", "-reconnect_delay_max", "10",
+            *seek_args,
+            "-re", "-i", direct_url,
+            "-vn", "-af", "aresample=async=1:first_pts=0",
+            "-c:a", "mp3", "-b:a", "128k", "-f", "mp3", "pipe:1",
+        ]
+        ff_proc = subprocess.Popen(ff_cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+        yt_proc = None
+    else:
+        yt_cmd = [
+            "yt-dlp", "--js-runtimes", "node", "--no-playlist",
+            "-f", audio_fmt, "-o", "-", "--quiet", stream.url,
+        ]
+        ff_cmd = [
+            "ffmpeg", "-loglevel", "error",
+            "-i", "pipe:0", "-vn",
+            "-af", "aresample=async=1:first_pts=0",
+            "-c:a", "mp3", "-b:a", "128k", "-f", "mp3", "pipe:1",
+        ]
+        yt_proc = subprocess.Popen(yt_cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+        ff_proc = subprocess.Popen(ff_cmd, stdin=yt_proc.stdout,
+                                   stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+
+    with stream.lock:
+        stream._audio_proc = ff_proc
+    with stream._audio_lock:
+        stream._audio_chunks.clear()
+        stream._audio_done = False
+    stream._audio_ready.clear()
+
+    def _drain():
+        try:
+            while True:
+                chunk = ff_proc.stdout.read(8192)
+                if not chunk:
+                    break
+                with stream._audio_lock:
+                    stream._audio_chunks.append(chunk)
+                stream._audio_ready.set()
+        finally:
+            with stream._audio_lock:
+                stream._audio_done = True
+            stream._audio_ready.set()
+            for p in (ff_proc, yt_proc):
+                if p and p.poll() is None:
+                    try:
+                        p.terminate()
+                    except Exception:
+                        pass
 
     threading.Thread(target=_drain, daemon=True).start()
 
@@ -1288,9 +1372,9 @@ def run_pipeline(stream: Stream):
         return
 
     if stream.audio_only:
-        # For non-direct streams (YouTube/Twitch), audio is handled entirely by
-        # _serve_audio/_launch_audio_pipeline. Just mark as streaming so the
-        # audio endpoint can proceed without waiting for the MJPEG pipeline.
+        # Start unified audio buffer (works for all stream types) then return —
+        # no MJPEG pipeline is needed. _serve_audio drains from _audio_chunks.
+        threading.Thread(target=_start_audio_buffer_any, args=(stream,), daemon=True).start()
         with stream.lock:
             stream.status = "streaming"
             if stream.started_at is None:
@@ -3607,18 +3691,26 @@ AUDIO_WATCH_HTML = """<!DOCTYPE html>
 <title>OpenCarStream — Audio</title>
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@700;900&family=Rajdhani:wght@300;500&display=swap');
-  :root{--red:#e31937;--dark:#090909;--panel:#111117;--border:#252530;--text:#e0e0ee;}
-  @media(prefers-color-scheme:light){:root{--dark:#f4f4f6;--panel:#ffffff;--border:#d8d8e0;--text:#1a1a2e;}}
+  :root{--red:#e31937;--dark:#090909;--panel:#111117;--border:#252530;--text:#e0e0ee;--muted:#555568;}
+  @media(prefers-color-scheme:light){:root{--dark:#f4f4f6;--panel:#ffffff;--border:#d8d8e0;--text:#1a1a2e;--muted:#888899;}}
   *{margin:0;padding:0;box-sizing:border-box;}
   body{background:var(--dark);color:var(--text);font-family:'Rajdhani',sans-serif;min-height:100vh;display:flex;flex-direction:column;align-items:center;padding:16px;}
   .top{width:100%;max-width:720px;display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;gap:12px;}
   .title{font-family:'Orbitron',monospace;letter-spacing:.1em;color:var(--red);font-size:1rem;}
   .back{color:var(--red);text-decoration:none;font-family:monospace;}
-  .wrap{width:100%;max-width:720px;background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:28px 24px;display:flex;flex-direction:column;gap:16px;}
+  .wrap{width:100%;max-width:720px;background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:28px 24px;display:flex;flex-direction:column;gap:14px;}
   audio{width:100%;}
   .stream-title{font-size:1rem;color:var(--text);font-family:'Rajdhani',sans-serif;font-weight:500;letter-spacing:.02em;min-height:1.4em;}
   .diag{padding:10px 12px;border:1px solid var(--border);border-radius:8px;font-family:monospace;font-size:.85rem;line-height:1.4;white-space:pre-wrap;color:#f0b5bf;background:#160d11;display:none;}
-  .status{font-family:'Orbitron',monospace;font-size:.7rem;letter-spacing:.1em;color:var(--red);text-transform:uppercase;padding:8px 0;}
+  .status{font-family:'Orbitron',monospace;font-size:.7rem;letter-spacing:.1em;color:var(--red);text-transform:uppercase;}
+  .seek-bar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding-top:10px;border-top:1px solid var(--border);}
+  .seek-btn{background:var(--panel);border:1px solid var(--border);color:var(--text);font-family:'Rajdhani',sans-serif;font-size:.95rem;font-weight:500;padding:6px 12px;border-radius:6px;cursor:pointer;}
+  .seek-btn:hover{border-color:var(--red);color:var(--red);}
+  .elapsed{font-family:monospace;font-size:1rem;color:var(--text);margin-left:auto;letter-spacing:.05em;}
+  .live-badge{font-family:'Orbitron',monospace;font-size:.65rem;letter-spacing:.12em;color:#fff;background:var(--red);padding:2px 7px;border-radius:3px;margin-left:auto;display:none;}
+  .seek-label{font-family:'Orbitron',monospace;font-size:.65rem;letter-spacing:.1em;color:var(--muted);text-transform:uppercase;}
+  .seek-pending{font-family:monospace;font-size:.85rem;color:var(--red);}
+  .seek-cancel{background:none;border:none;color:#888;font-size:.8rem;cursor:pointer;text-decoration:underline;padding:0;}
 </style>
 </head>
 <body>
@@ -3630,25 +3722,40 @@ AUDIO_WATCH_HTML = """<!DOCTYPE html>
     <div id="stream-title" class="stream-title"></div>
     <div id="status-msg" class="status">Connecting…</div>
     <audio id="audio" controls autoplay playsinline></audio>
+    <div class="seek-bar" id="seek-bar">
+      <span class="seek-label">Seek</span>
+      <button class="seek-btn" data-mins="-10">-10 min</button>
+      <button class="seek-btn" data-mins="1">+1 min</button>
+      <button class="seek-btn" data-mins="5">+5 min</button>
+      <button class="seek-btn" data-mins="10">+10 min</button>
+      <span id="seek-pending" class="seek-pending"></span>
+      <button id="seek-cancel" class="seek-cancel" style="display:none">cancel</button>
+      <span id="live-badge" class="live-badge">● Live</span>
+      <span id="elapsed" class="elapsed">0:00:00</span>
+    </div>
     <div id="diag" class="diag"></div>
   </div>
 <script>
 (function () {
-  var sid = "{{stream_id}}";
-  var syncMs = "{{sync_ms}}";
+  var sid      = "{{stream_id}}";
+  var syncMs   = "{{sync_ms}}";
+  var videoUrl = "{{video_url}}";
+  var seekS    = parseInt("{{seek_s}}", 10) || 0;
   if (!sid) { window.location.href = "/"; return; }
 
-  var audio = document.getElementById("audio");
-  var titleEl = document.getElementById("stream-title");
-  var statusEl = document.getElementById("status-msg");
-  var diagEl = document.getElementById("diag");
+  var audio      = document.getElementById("audio");
+  var titleEl    = document.getElementById("stream-title");
+  var statusEl   = document.getElementById("status-msg");
+  var diagEl     = document.getElementById("diag");
+  var elapsedEl  = document.getElementById("elapsed");
+  var liveBadge  = document.getElementById("live-badge");
+  var seekBar    = document.getElementById("seek-bar");
+  var seekPend   = document.getElementById("seek-pending");
+  var seekCancel = document.getElementById("seek-cancel");
 
   audio.src = "/audio?sid=" + encodeURIComponent(sid) + "&sync=" + encodeURIComponent(syncMs);
   audio.preload = "auto";
-  try {
-    var p = audio.play();
-    if (p && p.catch) p.catch(function(){});
-  } catch(e) {}
+  try { var p = audio.play(); if (p && p.catch) p.catch(function(){}); } catch(e) {}
 
   var retryPlay = function () {
     try { var p2 = audio.play(); if (p2 && p2.catch) p2.catch(function(){}); } catch(e) {}
@@ -3660,6 +3767,13 @@ AUDIO_WATCH_HTML = """<!DOCTYPE html>
 
   audio.addEventListener("playing", function () { statusEl.textContent = "Playing"; });
   audio.addEventListener("waiting", function () { statusEl.textContent = "Buffering…"; });
+  audio.addEventListener("loadedmetadata", function () {
+    if (!isFinite(audio.duration)) {
+      liveBadge.style.display = "inline-block";
+      elapsedEl.style.display = "none";
+      seekBar.style.display   = videoUrl ? "" : "none";  // hide seek for live without url
+    }
+  });
   audio.addEventListener("error", function () {
     statusEl.textContent = "Error loading audio";
     var xhr = new XMLHttpRequest();
@@ -3675,6 +3789,58 @@ AUDIO_WATCH_HTML = """<!DOCTYPE html>
     xhr.send();
   });
 
+  // ── Elapsed time ─────────────────────────────────────────────────────────
+  var pageStartMs = Date.now();
+  function currentElapsedS() { return seekS + Math.floor((Date.now() - pageStartMs) / 1000); }
+  function fmtTime(s) {
+    var h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), sec = s % 60;
+    return h + ":" + (m < 10 ? "0" : "") + m + ":" + (sec < 10 ? "0" : "") + sec;
+  }
+  setInterval(function () { elapsedEl.textContent = fmtTime(currentElapsedS()); }, 1000);
+
+  // ── Seek controls (VOD only) ──────────────────────────────────────────────
+  var pendingOffsetS = 0;
+  var seekTimer = null, countdownInterval = null;
+  var SEEK_DEBOUNCE_MS = 3000;
+
+  if (videoUrl) {
+    document.querySelectorAll(".seek-btn").forEach(function (btn) {
+      btn.addEventListener("click", function () {
+        pendingOffsetS = Math.max(-seekS, pendingOffsetS + parseInt(btn.getAttribute("data-mins"), 10) * 60);
+        startSeekTimer();
+      });
+    });
+    seekCancel.addEventListener("click", function () {
+      clearTimeout(seekTimer); clearInterval(countdownInterval);
+      pendingOffsetS = 0; seekPend.textContent = ""; seekCancel.style.display = "none";
+    });
+  } else {
+    seekBar.style.display = "none";
+  }
+
+  function startSeekTimer() {
+    clearTimeout(seekTimer); clearInterval(countdownInterval);
+    var countdown = SEEK_DEBOUNCE_MS / 1000;
+    var sign = pendingOffsetS >= 0 ? "+" : "";
+    seekPend.textContent = sign + Math.floor(pendingOffsetS / 60) + "m (seeking in " + countdown + "s)";
+    seekCancel.style.display = "inline";
+    countdownInterval = setInterval(function () {
+      countdown--;
+      if (countdown > 0) {
+        var s2 = pendingOffsetS >= 0 ? "+" : "";
+        seekPend.textContent = s2 + Math.floor(pendingOffsetS / 60) + "m (seeking in " + countdown + "s)";
+      }
+    }, 1000);
+    seekTimer = setTimeout(function () {
+      clearInterval(countdownInterval);
+      var target = Math.max(0, seekS + pendingOffsetS);
+      window.location.href = "/watch?url=" + encodeURIComponent(videoUrl) +
+        "&mode=audio&seek=" + target +
+        (syncMs && syncMs !== "0" ? "&sync=" + encodeURIComponent(syncMs) : "");
+    }, SEEK_DEBOUNCE_MS);
+  }
+
+  // ── Title poll ────────────────────────────────────────────────────────────
   (function pollTitle() {
     var xhr = new XMLHttpRequest();
     xhr.open("GET", "/stream_status?sid=" + encodeURIComponent(sid), true);
@@ -3798,10 +3964,12 @@ def render_watch_page(stream_id: str, sync_ms: int, video_url: str = "", quality
             .replace("{{local_file}}", local_file)
             .replace("{{seek_s}}", str(seek_s)))
 
-def render_audio_page(stream_id: str, sync_ms: int) -> str:
+def render_audio_page(stream_id: str, sync_ms: int, video_url: str = "", seek_s: int = 0) -> str:
     return (AUDIO_WATCH_HTML
             .replace("{{stream_id}}", stream_id)
-            .replace("{{sync_ms}}", str(sync_ms)))
+            .replace("{{sync_ms}}", str(sync_ms))
+            .replace("{{video_url}}", video_url)
+            .replace("{{seek_s}}", str(seek_s)))
 
 def render_mp4_page(direct_url: str, error_msg: str = "", stream_title: str = "") -> str:
     return (MP4_WATCH_HTML
@@ -3949,6 +4117,14 @@ class Handler(BaseHTTPRequestHandler):
             list_name = qs.get("list", [None])[0]
             self._serve_iptv_streams(list_name)
 
+        elif path == "/stream_fmp4":
+            raw_url = qs.get("url", [None])[0]
+            if not raw_url:
+                self._error(400, "Missing ?url= parameter")
+                return
+            stream_url = unquote(raw_url)
+            self._serve_fmp4_direct(stream_url)
+
         elif path == "/file_serve":
             raw_path = qs.get("path", [None])[0]
             if not raw_path:
@@ -4001,8 +4177,14 @@ class Handler(BaseHTTPRequestHandler):
             if seek_s > 0:
                 stream.seek_s = float(seek_s)
             local_mode = (qs.get("mode", ["mjpeg"])[0] or "mjpeg").lower()
-            if local_mode not in ("mjpeg", "audio"):
+            if local_mode not in ("mjpeg", "mp4", "audio"):
                 local_mode = "mjpeg"
+
+            if local_mode == "mp4":
+                self._html(render_mp4_page(
+                    "/file_serve?path=" + quote(local_file, safe="")
+                ))
+                return
 
             if local_mode == "audio":
                 stream.audio_only = True
@@ -4132,7 +4314,7 @@ class Handler(BaseHTTPRequestHandler):
             stream.seek_s = seek_s
             if mode == "audio":
                 stream.audio_only = True
-                self._html(render_audio_page(stream.id, sync_ms))
+                self._html(render_audio_page(stream.id, sync_ms, video_url, int(seek_s)))
             else:
                 self._html(render_watch_page(stream.id, sync_ms, video_url, quality))
 
@@ -4424,6 +4606,44 @@ class Handler(BaseHTTPRequestHandler):
             "stream_count": len(streams),
             "streams": streams,
         })
+
+    def _serve_fmp4_direct(self, url: str):
+        """Remux a live stream to fragmented MP4 for native browser <video> playback."""
+        ff_cmd = [
+            "ffmpeg",
+            "-loglevel", "error",
+            *_direct_input_args(url),
+            "-i", _ffmpeg_input_target(url),
+            "-c:v", "copy",
+            "-c:a", "aac",
+            "-b:a", "192k",
+            "-movflags", "frag_keyframe+empty_moov+default_base_moof",
+            "-f", "mp4",
+            "pipe:1",
+        ]
+        ff_proc = None
+        try:
+            ff_proc = subprocess.Popen(
+                ff_cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL
+            )
+            self.send_response(200)
+            self.send_header("Content-Type", "video/mp4")
+            self.send_header("Cache-Control", "no-cache, no-store")
+            self.send_header("Connection", "keep-alive")
+            self.end_headers()
+            while True:
+                chunk = ff_proc.stdout.read(65536)
+                if not chunk:
+                    break
+                self.wfile.write(chunk)
+        except (BrokenPipeError, ConnectionResetError):
+            pass
+        finally:
+            if ff_proc and ff_proc.poll() is None:
+                try:
+                    ff_proc.terminate()
+                except Exception:
+                    pass
 
     def _serve_file_bytes(self, abs_path: str):
         """Serve a local media file directly over HTTP for native browser playback."""
@@ -4785,16 +5005,46 @@ class Handler(BaseHTTPRequestHandler):
         return yt_proc, ff_proc
 
     def _serve_audio(self, stream: Stream, sync_ms: int = AUDIO_DELAY_MS):
-        log.info(f"[{stream.id}] Audio starting")
+        log.info(f"[{stream.id}] Audio starting (audio_only={stream.audio_only})")
+
+        # audio_only mode: pipeline uses _start_audio_buffer_any which always
+        # fills _audio_chunks regardless of stream type. Start pipeline if needed.
+        if stream.audio_only:
+            if stream.status == "starting" and stream._audio_proc is None:
+                threading.Thread(target=run_pipeline,
+                                 args=(stream,), daemon=True).start()
+            try:
+                self.send_response(200)
+                self.send_header("Content-Type", "audio/mpeg")
+                self.send_header("Cache-Control", "no-cache, no-store")
+                self.send_header("Connection", "keep-alive")
+                self.end_headers()
+                cursor = 0
+                sent_bytes = 0
+                while True:
+                    stream._audio_ready.wait(timeout=5)
+                    stream._audio_ready.clear()
+                    with stream._audio_lock:
+                        new_chunks = stream._audio_chunks[cursor:]
+                        cursor += len(new_chunks)
+                        done = stream._audio_done
+                    for ch in new_chunks:
+                        self.wfile.write(ch)
+                        sent_bytes += len(ch)
+                    self.wfile.flush()
+                    if done and not new_chunks:
+                        break
+                log.info(f"[{stream.id}] Audio-only stream ended (bytes={sent_bytes})")
+            except (BrokenPipeError, ConnectionResetError):
+                pass
+            return
 
         if _is_direct_stream(stream.url):
-            # Audio may be requested before /stream starts the pipeline.
+            # MJPEG mode: audio is captured into _audio_chunks by the muxed pipeline.
+            # Start the pipeline here if /audio is requested before /stream.
             if stream.status == "starting" and stream._ff_proc is None:
                 threading.Thread(target=run_pipeline,
                                  args=(stream,), daemon=True).start()
-            # For direct streams the audio is already being captured into
-            # stream._audio_chunks by _start_audio_buffer. Drain from there
-            # instead of opening a second connection to the source.
             try:
                 self.send_response(200)
                 self.send_header("Content-Type", "audio/mpeg")
@@ -4805,7 +5055,6 @@ class Handler(BaseHTTPRequestHandler):
                 cursor = 0
                 sent_bytes = 0
                 while True:
-                    # Wait for new chunks to appear
                     stream._audio_ready.wait(timeout=5)
                     stream._audio_ready.clear()
                     with stream._audio_lock:
@@ -4823,10 +5072,10 @@ class Handler(BaseHTTPRequestHandler):
                 pass
             return
 
+        # MJPEG mode, non-direct (YouTube/Twitch): independent audio pipeline
         yt_proc = None
         ff_proc = None
         try:
-            # Audio starts from the same seek position as the video stream.
             yt_proc, ff_proc = self._launch_audio_pipeline(stream.url, seek_s=stream.seek_s)
 
             self.send_response(200)
