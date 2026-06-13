@@ -1028,22 +1028,21 @@ def _resolve_mp4_url(url: str, quality: int | None) -> tuple[str, str]:
     if _is_local_media_url(url):
         return "/stream_fmp4?url=" + quote(url, safe=""), ""
 
-    # HLS manifests — most browsers (including Tesla/WebKit) play these natively
-    if _is_direct_hls(url):
-        return url, ""
+    # Pluto TV live HLS: Chrome/Firefox can't play HLS natively, transcode via /stream_fmp4
+    if _is_pluto_stream(url) or _is_direct_hls(url):
+        return "/stream_fmp4?url=" + quote(url, safe=""), ""
 
     # Acestream, RTP/UDP/RTSP, LAN MPEG-TS — browser can't play these natively;
     # transcode to fragmented MP4 on the fly via /stream_fmp4
     if _is_acestream(url) or _is_rtp_stream(url) or _is_local_network_stream(url):
         return "/stream_fmp4?url=" + quote(url, safe=""), ""
 
-    # YouTube, Twitch, etc: resolve a direct CDN URL via yt-dlp, then route
-    # through /stream_fmp4 so ffmpeg transcodes to H.264+AAC for browser compat
-    # (avoids AC3/EAC3/DTS audio and non-H.264 video codecs like Xvid, VP9, etc.)
+    # YouTube, Twitch, etc: resolve a direct CDN URL via yt-dlp and serve it
+    # directly to the browser. Prefer H.264+AAC so no transcoding is needed.
     fmt = (
-        f"best[height<={quality}]/best"
+        f"best[vcodec^=avc][height<={quality}]/best[vcodec^=avc]/best[height<={quality}]/best"
         if quality
-        else "best"
+        else "best[vcodec^=avc]/best"
     )
     try:
         r = subprocess.run(
@@ -1054,7 +1053,7 @@ def _resolve_mp4_url(url: str, quality: int | None) -> tuple[str, str]:
         if r.returncode == 0:
             lines = [l.strip() for l in r.stdout.strip().splitlines() if l.strip()]
             if lines:
-                return "/stream_fmp4?url=" + quote(lines[0], safe=""), ""
+                return lines[0], ""
     except Exception as e:
         return "", str(e)
     return "", "Could not resolve a direct playable URL"
