@@ -984,6 +984,34 @@ _BROWSER_UA = (
 )
 
 
+def _probe_local_codecs(abs_path: str) -> tuple[str, str]:
+    """Return (video_codec, audio_codec) for a local file using ffprobe. Empty string if not found."""
+    try:
+        r = subprocess.run(
+            [
+                "ffprobe", "-v", "error",
+                "-select_streams", "v:0", "-show_entries", "stream=codec_name",
+                "-of", "default=noprint_wrappers=1:nokey=1",
+                abs_path,
+            ],
+            capture_output=True, text=True, timeout=5,
+        )
+        vcodec = r.stdout.strip().lower()
+        r2 = subprocess.run(
+            [
+                "ffprobe", "-v", "error",
+                "-select_streams", "a:0", "-show_entries", "stream=codec_name",
+                "-of", "default=noprint_wrappers=1:nokey=1",
+                abs_path,
+            ],
+            capture_output=True, text=True, timeout=5,
+        )
+        acodec = r2.stdout.strip().lower()
+        return vcodec, acodec
+    except Exception:
+        return "", ""
+
+
 def _direct_input_args(url: str) -> list[str]:
     """ffmpeg input flags for a direct stream URL."""
     from urllib.parse import urlparse, parse_qs
@@ -4643,21 +4671,33 @@ class Handler(BaseHTTPRequestHandler):
 
     def _serve_fmp4_direct(self, url: str):
         """Remux/transcode a live stream to fragmented MP4 for native browser <video> playback."""
+        # For local files, probe codecs to skip unnecessary transcoding
+        video_args: list[str]
+        audio_args: list[str]
+        if _is_local_media_url(url):
+            vcodec, acodec = _probe_local_codecs(_ffmpeg_input_target(url))
+            # H.264 and H.265 are directly playable; copy to avoid CPU transcode
+            # H.265 needs a level/profile flag but browsers handle it in fMP4
+            if vcodec in ("h264", "hevc"):
+                video_args = ["-c:v", "copy"]
+            else:
+                video_args = ["-c:v", "libx264", "-preset", "ultrafast", "-tune", "zerolatency", "-crf", "23"]
+            # AAC and MP3 are directly playable; copy to avoid audio re-encode
+            if acodec in ("aac", "mp3"):
+                audio_args = ["-c:a", "copy"]
+            else:
+                audio_args = ["-c:a", "aac", "-b:a", "192k", "-ar", "48000", "-ac", "2"]
+        else:
+            video_args = ["-c:v", "libx264", "-preset", "ultrafast", "-tune", "zerolatency", "-crf", "23"]
+            audio_args = ["-c:a", "aac", "-b:a", "192k", "-ar", "48000", "-ac", "2"]
+
         ff_cmd = [
             "ffmpeg",
             "-loglevel", "error",
             *_direct_input_args(url),
             "-i", _ffmpeg_input_target(url),
-            # Transcode video to H.264 so browsers can play any source codec (xvid, mpeg2, hevc, etc.)
-            "-c:v", "libx264",
-            "-preset", "ultrafast",
-            "-tune", "zerolatency",
-            "-crf", "23",
-            # Transcode audio to AAC (handles AC3, EAC3, DTS, MP2, etc.)
-            "-c:a", "aac",
-            "-b:a", "192k",
-            "-ar", "48000",
-            "-ac", "2",
+            *video_args,
+            *audio_args,
             "-movflags", "frag_keyframe+empty_moov+default_base_moof",
             "-f", "mp4",
             "pipe:1",
