@@ -1217,7 +1217,7 @@ def run_pipeline(stream: Stream):
                     ),
                     "-vcodec", "mjpeg",
                     "-q:v", str(FFMPEG_QUALITY),
-                    "-r", str(MJPEG_FPS),
+                    "-r", str(output_fps),
                     "-f", "image2pipe",
                     "-vframes", "99999999",
                     "pipe:1",
