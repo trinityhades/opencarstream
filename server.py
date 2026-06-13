@@ -126,6 +126,7 @@ class Stream:
         self._audio_done   = False
         self._frame_history = deque(maxlen=max(MJPEG_FPS * 12, 120))
         self.frame_cond     = threading.Condition(self.lock)  # notified whenever a new frame arrives
+        self.audio_only     = False  # when True, skip MJPEG pipeline and run audio only
 
     def stop(self):
         for proc in [self._ff_proc, self._yt_proc, self._audio_proc]:
@@ -996,6 +997,32 @@ def _direct_input_args(url: str) -> list[str]:
     return args
 
 
+def _resolve_mp4_url(url: str, quality: int | None) -> tuple[str, str]:
+    """Resolve a direct playable URL for MP4/native mode. Returns (direct_url, error)."""
+    if _is_local_media_url(url):
+        return "", "Local media files are not supported in MP4 mode"
+    if _is_direct_stream(url):
+        return _ffmpeg_input_target(url), ""
+    fmt = (
+        f"best[ext=mp4][height<={quality}]/best[height<={quality}]/best[ext=mp4]/best"
+        if quality
+        else "best[ext=mp4]/best"
+    )
+    try:
+        r = subprocess.run(
+            ["yt-dlp", "--js-runtimes", "node", "--no-playlist",
+             "-f", fmt, "--get-url", "--quiet", url],
+            capture_output=True, text=True, timeout=30,
+        )
+        if r.returncode == 0:
+            lines = [l.strip() for l in r.stdout.strip().splitlines() if l.strip()]
+            if lines:
+                return lines[0], ""
+    except Exception as e:
+        return "", str(e)
+    return "", "Could not resolve a direct playable URL"
+
+
 def _start_audio_buffer(stream: Stream):
     """Spawn a dedicated ffmpeg process to fill stream._audio_chunks with MP3."""
     audio_cmd = [
@@ -1133,8 +1160,34 @@ def _run_hls_pipeline(stream: Stream):
     is_rtp = _is_rtp_stream(stream.url)
     is_lan = _is_local_network_stream(stream.url)
     log.info(
-        f"[{stream.id}] Direct pipeline (ace={is_ace}, pluto={is_pluto}, local={is_local}, rtp={is_rtp}, lan={is_lan})"
+        f"[{stream.id}] Direct pipeline (ace={is_ace}, pluto={is_pluto}, local={is_local}, rtp={is_rtp}, lan={is_lan}, audio_only={stream.audio_only})"
     )
+
+    if stream.audio_only:
+        try:
+            _start_audio_buffer(stream)
+            with stream.lock:
+                stream.status = "streaming"
+                if stream.started_at is None:
+                    stream.started_at = time.time()
+            # Wait for audio to finish
+            stream._audio_ready.wait()
+            while True:
+                stream._audio_ready.clear()
+                with stream._audio_lock:
+                    if stream._audio_done:
+                        break
+                stream._audio_ready.wait()
+            with stream.lock:
+                stream.status = "done"
+        except Exception as e:
+            with stream.lock:
+                stream.status = "error"
+                stream.error = str(e)
+            log.error(f"[{stream.id}] Audio-only pipeline error: {e}")
+        finally:
+            stream.stop()
+        return
 
     SOI = b"\xff\xd8"
     EOI = b"\xff\xd9"
@@ -1222,6 +1275,16 @@ def run_pipeline(stream: Stream):
 
     if _is_direct_stream(stream.url):
         _run_hls_pipeline(stream)
+        return
+
+    if stream.audio_only:
+        # For non-direct streams (YouTube/Twitch), audio is handled entirely by
+        # _serve_audio/_launch_audio_pipeline. Just mark as streaming so the
+        # audio endpoint can proceed without waiting for the MJPEG pipeline.
+        with stream.lock:
+            stream.status = "streaming"
+            if stream.started_at is None:
+                stream.started_at = time.time()
         return
 
     try:
@@ -1521,6 +1584,7 @@ STATUS_HTML = """<!DOCTYPE html>
     </p>
     <div style="display:flex;flex-direction:column;gap:10px;">
       <input id="yt-id" type="text" placeholder="URL or YouTube video ID">
+      <div id="yt-mode-btns" style="display:flex;gap:6px;flex-wrap:wrap;"></div>
       <div id="yt-quality-btns" style="display:flex;gap:6px;flex-wrap:wrap;"></div>
       <div id="yt-sync-btns" style="display:flex;gap:6px;flex-wrap:wrap;"></div>
     </div>
@@ -1557,6 +1621,7 @@ STATUS_HTML = """<!DOCTYPE html>
   <div class="card">
     <h2>Playback options</h2>
     <div style="display:flex;flex-direction:column;gap:10px;">
+      <div id="feed-mode-btns" style="display:flex;gap:6px;flex-wrap:wrap;"></div>
       <div id="feed-quality-btns" style="display:flex;gap:6px;flex-wrap:wrap;"></div>
       <div id="feed-sync-btns" style="display:flex;gap:6px;flex-wrap:wrap;"></div>
     </div>
@@ -1622,6 +1687,7 @@ STATUS_HTML = """<!DOCTYPE html>
   <div class="card">
     <h2>Playback options</h2>
     <div style="display:flex;flex-direction:column;gap:10px;">
+      <div id="twitch-mode-btns" style="display:flex;gap:6px;flex-wrap:wrap;"></div>
       <div id="twitch-quality-btns" style="display:flex;gap:6px;flex-wrap:wrap;"></div>
       <div id="twitch-sync-btns" style="display:flex;gap:6px;flex-wrap:wrap;"></div>
     </div>
@@ -1652,6 +1718,7 @@ STATUS_HTML = """<!DOCTYPE html>
   <div class="card">
     <h2>Playback options</h2>
     <div style="display:flex;flex-direction:column;gap:10px;">
+      <div id="pluto-mode-btns" style="display:flex;gap:6px;flex-wrap:wrap;"></div>
       <div id="pluto-sync-btns" style="display:flex;gap:6px;flex-wrap:wrap;"></div>
       <input id="pluto-filter" type="text" placeholder="Filter channels…"
              style="background:var(--input-bg);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:8px 12px;font-family:monospace;">
@@ -1670,6 +1737,7 @@ STATUS_HTML = """<!DOCTYPE html>
   <div class="card">
     <h2>Playback options</h2>
     <div style="display:flex;flex-direction:column;gap:10px;">
+      <div id="iptv-mode-btns" style="display:flex;gap:6px;flex-wrap:wrap;"></div>
       <div id="iptv-quality-btns" style="display:flex;gap:6px;flex-wrap:wrap;"></div>
       <div id="iptv-sync-btns" style="display:flex;gap:6px;flex-wrap:wrap;"></div>
     </div>
@@ -1706,6 +1774,7 @@ STATUS_HTML = """<!DOCTYPE html>
   <div class="card">
     <h2>Playback options</h2>
     <div style="display:flex;flex-direction:column;gap:8px;">
+      <div id="ace-mode-btns" style="display:flex;gap:6px;flex-wrap:wrap;"></div>
       <div id="ace-quality-btns" style="display:flex;gap:6px;flex-wrap:wrap;"></div>
       <div id="ace-sync-btns" style="display:flex;gap:6px;flex-wrap:wrap;"></div>
     </div>
@@ -1745,6 +1814,7 @@ STATUS_HTML = """<!DOCTYPE html>
   <div class="card">
     <h2>Playback options</h2>
     <div style="display:flex;flex-direction:column;gap:10px;">
+      <div id="local-mode-btns" style="display:flex;gap:6px;flex-wrap:wrap;"></div>
       <div id="local-sync-btns" style="display:flex;gap:6px;flex-wrap:wrap;"></div>
       <div>
         <button id="local-refresh"
@@ -1866,9 +1936,18 @@ STATUS_HTML = """<!DOCTYPE html>
     return state;
   }
 
+  // ── Mode button options (shared across tabs) ──
+  var modeOptions = [
+    { value: "mjpeg",  label: "MJPEG (Tesla)" },
+    { value: "mp4",    label: "MP4 (native)" },
+    { value: "audio",  label: "Audio only" }
+  ];
+
   // ── Stream tab ──
   var idInput    = document.getElementById("yt-id");
   var goButton   = document.getElementById("go-stream");
+
+  var modeSel = createButtonGroup("yt-mode-btns", modeOptions, "mjpeg");
 
   var qualitySel = createButtonGroup("yt-quality-btns", [
     { value: "", label: "AUTO" },
@@ -1892,10 +1971,11 @@ STATUS_HTML = """<!DOCTYPE html>
     { value: "4000", label: "4s" }
   ], "{{audio_delay_ms}}");
 
-  function buildWatchUrl(videoUrl, quality, sync) {
+  function buildWatchUrl(videoUrl, quality, sync, mode) {
     var target = "/watch?url=" + encodeURIComponent(videoUrl);
     if (quality) target += "&quality=" + encodeURIComponent(quality);
     if (sync)    target += "&sync="    + encodeURIComponent(sync);
+    if (mode && mode !== "mjpeg") target += "&mode=" + encodeURIComponent(mode);
     return target;
   }
 
@@ -1918,7 +1998,7 @@ STATUS_HTML = """<!DOCTYPE html>
     var raw = (idInput.value || "").trim();
     if (!raw) { idInput.focus(); return; }
     window.location.href = buildWatchUrl(
-      resolveInputUrl(raw), qualitySel.value, syncSel.value
+      resolveInputUrl(raw), qualitySel.value, syncSel.value, modeSel.value
     );
   }
 
@@ -1934,6 +2014,8 @@ STATUS_HTML = """<!DOCTYPE html>
   var twitchVodGo    = document.getElementById("twitch-vod-go");
   var twitchVodSt    = document.getElementById("twitch-vod-status");
   var twitchVodGrid  = document.getElementById("twitch-vod-grid");
+
+  var twitchMode = createButtonGroup("twitch-mode-btns", modeOptions, "mjpeg");
 
   var twitchQuality = createButtonGroup("twitch-quality-btns", [
     { value: "", label: "AUTO" },
@@ -1960,7 +2042,7 @@ STATUS_HTML = """<!DOCTYPE html>
     var ch = (twitchLiveCh.value || "").trim().replace(/^@/, "");
     if (!ch) { twitchLiveCh.focus(); return; }
     var url = "https://www.twitch.tv/" + ch;
-    window.location.href = buildWatchUrl(url, twitchQuality.value, twitchSync.value);
+    window.location.href = buildWatchUrl(url, twitchQuality.value, twitchSync.value, twitchMode.value);
   });
   twitchLiveCh.addEventListener("keydown", function (e) {
     if ((e.key || "") === "Enter" || e.keyCode === 13) twitchLiveGo.click();
@@ -2007,7 +2089,7 @@ STATUS_HTML = """<!DOCTYPE html>
           (dur ? '<div class="feed-dur">' + escHtml(dur) + '</div>' : '') +
           '</div>';
         card.addEventListener("click", function () {
-          window.location.href = buildWatchUrl(v.url, twitchQuality.value, twitchSync.value);
+          window.location.href = buildWatchUrl(v.url, twitchQuality.value, twitchSync.value, twitchMode.value);
         });
         twitchVodGrid.appendChild(card);
       });
@@ -2031,6 +2113,8 @@ STATUS_HTML = """<!DOCTYPE html>
   var plutoStatus   = document.getElementById("pluto-status");
   var plutoList     = document.getElementById("pluto-list");
   var plutoLangBtns = document.getElementById("pluto-lang-btns");
+
+  var plutoMode = createButtonGroup("pluto-mode-btns", modeOptions, "mjpeg");
 
   var plutoSync = createButtonGroup("pluto-sync-btns", [
     { value: "0", label: "0s" },
@@ -2070,13 +2154,14 @@ STATUS_HTML = """<!DOCTYPE html>
         '<span style="font-family:monospace;font-size:.75rem;color:var(--muted);">LIVE →</span>';
       row.addEventListener("click", function () {
         if (ch.id && plutoActiveLang) {
-          window.location.href =
-            "/pluto_watch?lang=" + encodeURIComponent(plutoActiveLang) +
+          var plutoWatchUrl = "/pluto_watch?lang=" + encodeURIComponent(plutoActiveLang) +
             "&id=" + encodeURIComponent(ch.id) +
             "&sync=" + encodeURIComponent(plutoSync.value);
+          if (plutoMode.value && plutoMode.value !== "mjpeg") plutoWatchUrl += "&mode=" + encodeURIComponent(plutoMode.value);
+          window.location.href = plutoWatchUrl;
           return;
         }
-        window.location.href = buildWatchUrl(ch.url, "", plutoSync.value);
+        window.location.href = buildWatchUrl(ch.url, "", plutoSync.value, plutoMode.value);
       });
       plutoList.appendChild(row);
     });
@@ -2185,6 +2270,8 @@ STATUS_HTML = """<!DOCTYPE html>
   var iptvStatus    = document.getElementById("iptv-status");
   var iptvStreamsEl = document.getElementById("iptv-streams");
 
+  var iptvMode = createButtonGroup("iptv-mode-btns", modeOptions, "mjpeg");
+
   var iptvQuality = createButtonGroup("iptv-quality-btns", [
     { value: "", label: "AUTO" },
     { value: "1080", label: "1080p" },
@@ -2271,7 +2358,7 @@ STATUS_HTML = """<!DOCTYPE html>
         '<span style="font-size:.95rem;">' + escHtml(item.name || item.url) + '</span>' +
         '<span style="font-family:monospace;font-size:.75rem;color:var(--muted);">OPEN \u2192</span>';
       row.addEventListener("click", function () {
-        window.location.href = buildWatchUrl(item.url, iptvQuality.value, iptvSync.value);
+        window.location.href = buildWatchUrl(item.url, iptvQuality.value, iptvSync.value, iptvMode.value);
       });
       iptvStreamsEl.appendChild(row);
     });
@@ -2397,7 +2484,7 @@ STATUS_HTML = """<!DOCTYPE html>
       card.remove();
     });
     card.addEventListener("click", function () {
-      window.location.href = buildWatchUrl(v.url, feedQuality.value, feedSync.value);
+      window.location.href = buildWatchUrl(v.url, feedQuality.value, feedSync.value, feedMode.value);
     });
     return card;
   }
@@ -2451,6 +2538,8 @@ STATUS_HTML = """<!DOCTYPE html>
   var feedStatus   = document.getElementById("feed-status");
   var feedGrid     = document.getElementById("feed-grid");
   var feedCardTitle= document.getElementById("feed-card-title");
+
+  var feedMode = createButtonGroup("feed-mode-btns", modeOptions, "mjpeg");
 
   var feedQuality = createButtonGroup("feed-quality-btns", [
     { value: "", label: "AUTO" },
@@ -2699,7 +2788,7 @@ STATUS_HTML = """<!DOCTYPE html>
         (dur ? '<div class="feed-dur">' + escHtml(dur) + '</div>' : '') +
         '</div>';
       card.addEventListener("click", function () {
-        window.location.href = buildWatchUrl(v.url, feedQuality.value, feedSync.value);
+        window.location.href = buildWatchUrl(v.url, feedQuality.value, feedSync.value, feedMode.value);
       });
       ytSearchGrid.appendChild(card);
     });
@@ -2771,7 +2860,7 @@ STATUS_HTML = """<!DOCTYPE html>
         (dur ? '<div class="feed-dur">' + escHtml(dur) + '</div>' : '') +
         '</div>';
       card.addEventListener("click", function () {
-        window.location.href = buildWatchUrl(v.url, feedQuality.value, feedSync.value);
+        window.location.href = buildWatchUrl(v.url, feedQuality.value, feedSync.value, feedMode.value);
       });
       feedGrid.appendChild(card);
     });
@@ -2841,6 +2930,8 @@ STATUS_HTML = """<!DOCTYPE html>
   var aceSaveBtn  = document.getElementById("ace-save-btn");
   var aceSavedList= document.getElementById("ace-saved-list");
 
+  var aceMode = createButtonGroup("ace-mode-btns", modeOptions, "mjpeg");
+
   var aceQuality = createButtonGroup("ace-quality-btns", [
     { value: "", label: "AUTO" },
     { value: "1080", label: "1080p" },
@@ -2894,7 +2985,7 @@ STATUS_HTML = """<!DOCTYPE html>
     var url = buildAceUrl(raw);
     if (!url) { aceIdInput.focus(); return; }
     localStorage.setItem(ACE_HOST_KEY, (aceHost.value || "").trim());
-    window.location.href = buildWatchUrl(url, aceQuality.value, aceSync.value);
+    window.location.href = buildWatchUrl(url, aceQuality.value, aceSync.value, aceMode.value);
   }
 
   aceGo.addEventListener("click", openAceStream);
@@ -2921,7 +3012,7 @@ STATUS_HTML = """<!DOCTYPE html>
         'color:var(--muted);border-radius:4px;padding:2px 8px;cursor:pointer;font-size:.75rem;">✕</button>';
       row.querySelector("[data-idx]").addEventListener("click", function () {
         var url = buildAceUrl(item.id);
-        if (url) window.location.href = buildWatchUrl(url, aceQuality.value, aceSync.value);
+        if (url) window.location.href = buildWatchUrl(url, aceQuality.value, aceSync.value, aceMode.value);
       });
       row.querySelector("[data-del]").addEventListener("click", function (e) {
         e.stopPropagation();
@@ -2968,6 +3059,8 @@ STATUS_HTML = """<!DOCTYPE html>
   var localRefresh = document.getElementById("local-refresh");
   var localStatus  = document.getElementById("local-status");
   var localList    = document.getElementById("local-list");
+
+  var localMode = createButtonGroup("local-mode-btns", modeOptions, "mjpeg");
 
   var localSync = createButtonGroup("local-sync-btns", [
     { value: "0", label: "0s" },
@@ -3044,9 +3137,10 @@ STATUS_HTML = """<!DOCTYPE html>
         '<span style="font-size:.95rem;">\\uD83C\\uDFA5 ' + escHtml(item.name) + '</span>' +
         '<span style="font-family:monospace;font-size:.75rem;color:var(--muted);">PLAY \u2192</span>';
       row.addEventListener("click", function () {
-        window.location.href =
-          "/local_watch?file=" + encodeURIComponent(item.path) +
+        var localUrl = "/local_watch?file=" + encodeURIComponent(item.path) +
           "&sync=" + encodeURIComponent(localSync.value);
+        if (localMode.value && localMode.value !== "mjpeg") localUrl += "&mode=" + encodeURIComponent(localMode.value);
+        window.location.href = localUrl;
       });
       localList.appendChild(row);
     });
@@ -3495,6 +3589,151 @@ WATCH_HTML = """<!DOCTYPE html>
 </body></html>"""
 
 
+AUDIO_WATCH_HTML = """<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>OpenCarStream — Audio</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@700;900&family=Rajdhani:wght@300;500&display=swap');
+  :root{--red:#e31937;--dark:#090909;--panel:#111117;--border:#252530;--text:#e0e0ee;}
+  @media(prefers-color-scheme:light){:root{--dark:#f4f4f6;--panel:#ffffff;--border:#d8d8e0;--text:#1a1a2e;}}
+  *{margin:0;padding:0;box-sizing:border-box;}
+  body{background:var(--dark);color:var(--text);font-family:'Rajdhani',sans-serif;min-height:100vh;display:flex;flex-direction:column;align-items:center;padding:16px;}
+  .top{width:100%;max-width:720px;display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;gap:12px;}
+  .title{font-family:'Orbitron',monospace;letter-spacing:.1em;color:var(--red);font-size:1rem;}
+  .back{color:var(--red);text-decoration:none;font-family:monospace;}
+  .wrap{width:100%;max-width:720px;background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:28px 24px;display:flex;flex-direction:column;gap:16px;}
+  audio{width:100%;}
+  .stream-title{font-size:1rem;color:var(--text);font-family:'Rajdhani',sans-serif;font-weight:500;letter-spacing:.02em;min-height:1.4em;}
+  .diag{padding:10px 12px;border:1px solid var(--border);border-radius:8px;font-family:monospace;font-size:.85rem;line-height:1.4;white-space:pre-wrap;color:#f0b5bf;background:#160d11;display:none;}
+  .status{font-family:'Orbitron',monospace;font-size:.7rem;letter-spacing:.1em;color:var(--red);text-transform:uppercase;padding:8px 0;}
+</style>
+</head>
+<body>
+  <div class="top">
+    <div class="title">AUDIO STREAM</div>
+    <a class="back" href="/">← Back</a>
+  </div>
+  <div class="wrap">
+    <div id="stream-title" class="stream-title"></div>
+    <div id="status-msg" class="status">Connecting…</div>
+    <audio id="audio" controls autoplay playsinline></audio>
+    <div id="diag" class="diag"></div>
+  </div>
+<script>
+(function () {
+  var sid = "{{stream_id}}";
+  var syncMs = "{{sync_ms}}";
+  if (!sid) { window.location.href = "/"; return; }
+
+  var audio = document.getElementById("audio");
+  var titleEl = document.getElementById("stream-title");
+  var statusEl = document.getElementById("status-msg");
+  var diagEl = document.getElementById("diag");
+
+  audio.src = "/audio?sid=" + encodeURIComponent(sid) + "&sync=" + encodeURIComponent(syncMs);
+  audio.preload = "auto";
+  try {
+    var p = audio.play();
+    if (p && p.catch) p.catch(function(){});
+  } catch(e) {}
+
+  var retryPlay = function () {
+    try { var p2 = audio.play(); if (p2 && p2.catch) p2.catch(function(){}); } catch(e) {}
+    window.removeEventListener("click", retryPlay, true);
+    window.removeEventListener("touchstart", retryPlay, true);
+  };
+  window.addEventListener("click", retryPlay, true);
+  window.addEventListener("touchstart", retryPlay, true);
+
+  audio.addEventListener("playing", function () { statusEl.textContent = "Playing"; });
+  audio.addEventListener("waiting", function () { statusEl.textContent = "Buffering…"; });
+  audio.addEventListener("error", function () {
+    statusEl.textContent = "Error loading audio";
+    var xhr = new XMLHttpRequest();
+    xhr.open("GET", "/stream_status?sid=" + encodeURIComponent(sid), true);
+    xhr.onreadystatechange = function () {
+      if (xhr.readyState !== 4) return;
+      try {
+        var d = JSON.parse(xhr.responseText);
+        diagEl.style.display = "block";
+        diagEl.textContent = "status: " + d.status + "\\nerror: " + (d.error || "n/a") + "\\ndetail: " + (d.error_detail || "n/a");
+      } catch(e) {}
+    };
+    xhr.send();
+  });
+
+  (function pollTitle() {
+    var xhr = new XMLHttpRequest();
+    xhr.open("GET", "/stream_status?sid=" + encodeURIComponent(sid), true);
+    xhr.timeout = 3000;
+    xhr.onreadystatechange = function () {
+      if (xhr.readyState !== 4) return;
+      try {
+        var d = JSON.parse(xhr.responseText);
+        if (d.title) titleEl.textContent = d.title;
+        if (!d.title) setTimeout(pollTitle, 2000);
+      } catch(e) { setTimeout(pollTitle, 2000); }
+    };
+    xhr.send();
+  })();
+})();
+</script>
+</body></html>"""
+
+
+MP4_WATCH_HTML = """<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>OpenCarStream — MP4</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@700;900&family=Rajdhani:wght@300;500&display=swap');
+  :root{--red:#e31937;--dark:#090909;--panel:#111117;--border:#252530;--text:#e0e0ee;}
+  @media(prefers-color-scheme:light){:root{--dark:#f4f4f6;--panel:#ffffff;--border:#d8d8e0;--text:#1a1a2e;}}
+  *{margin:0;padding:0;box-sizing:border-box;}
+  body{background:var(--dark);color:var(--text);font-family:'Rajdhani',sans-serif;min-height:100vh;display:flex;flex-direction:column;align-items:center;padding:16px;}
+  .top{width:100%;max-width:1280px;display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;gap:12px;}
+  .title{font-family:'Orbitron',monospace;letter-spacing:.1em;color:var(--red);font-size:1rem;}
+  .back{color:var(--red);text-decoration:none;font-family:monospace;}
+  .wrap{width:100%;max-width:1280px;background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:10px;}
+  video{width:100%;height:auto;display:block;background:black;border-radius:8px;}
+  .stream-title{font-size:.95rem;color:var(--text);font-family:'Rajdhani',sans-serif;font-weight:500;padding:8px 4px 2px;letter-spacing:.02em;min-height:1.4em;}
+  .err{margin-top:10px;padding:12px 16px;background:#160d11;border:1px solid var(--red);border-radius:8px;font-family:monospace;font-size:.9rem;color:#f0b5bf;display:none;}
+</style>
+</head>
+<body>
+  <div class="top">
+    <div class="title">MP4 STREAM</div>
+    <a class="back" href="/">← Back</a>
+  </div>
+  <div class="wrap">
+    <video id="video" controls autoplay playsinline>
+      <source src="{{direct_url}}" type="video/mp4">
+      Your browser does not support HTML5 video.
+    </video>
+    <div id="stream-title" class="stream-title">{{stream_title}}</div>
+    <div id="err" class="err">{{error_msg}}</div>
+  </div>
+<script>
+(function () {
+  var vid = document.getElementById("video");
+  var errEl = document.getElementById("err");
+  var errMsg = "{{error_msg}}";
+  if (errMsg) { errEl.style.display = "block"; vid.style.display = "none"; return; }
+  vid.addEventListener("error", function () {
+    errEl.style.display = "block";
+    errEl.textContent = "Video failed to load. The direct URL may have expired — go back and try again.";
+  });
+  try { var p = vid.play(); if (p && p.catch) p.catch(function(){}); } catch(e) {}
+})();
+</script>
+</body></html>"""
+
+
 def render_status_page() -> str:
     streams = registry.all_streams()
     if not streams:
@@ -3548,6 +3787,17 @@ def render_watch_page(stream_id: str, sync_ms: int, video_url: str = "", quality
             .replace("{{video_quality}}", str(quality or ""))
             .replace("{{local_file}}", local_file)
             .replace("{{seek_s}}", str(seek_s)))
+
+def render_audio_page(stream_id: str, sync_ms: int) -> str:
+    return (AUDIO_WATCH_HTML
+            .replace("{{stream_id}}", stream_id)
+            .replace("{{sync_ms}}", str(sync_ms)))
+
+def render_mp4_page(direct_url: str, error_msg: str = "", stream_title: str = "") -> str:
+    return (MP4_WATCH_HTML
+            .replace("{{direct_url}}", direct_url)
+            .replace("{{stream_title}}", stream_title)
+            .replace("{{error_msg}}", error_msg))
 
 
 # ── HTTP handler ──────────────────────────────────────────────────────────────
@@ -3726,6 +3976,15 @@ class Handler(BaseHTTPRequestHandler):
                 stream.title = os.path.splitext(os.path.basename(local_file))[0]
             if seek_s > 0:
                 stream.seek_s = float(seek_s)
+            local_mode = (qs.get("mode", ["mjpeg"])[0] or "mjpeg").lower()
+            if local_mode not in ("mjpeg", "audio"):
+                local_mode = "mjpeg"
+
+            if local_mode == "audio":
+                stream.audio_only = True
+                self._html(render_audio_page(stream.id, sync_ms))
+                return
+
             # Warm local playback so configured sync delay reflects timeline
             # delay rather than ffmpeg startup overhead.
             if stream.status == "starting" and stream._ff_proc is None:
@@ -3778,7 +4037,14 @@ class Handler(BaseHTTPRequestHandler):
                     ch = next((c for c in pluto_cache._by_lang.get(lang, []) if c.get("id") == channel_id), None)
                 if ch:
                     stream.title = ch["name"]
-            self._html(render_watch_page(stream.id, sync_ms))
+            pluto_mode = (qs.get("mode", ["mjpeg"])[0] or "mjpeg").lower()
+            if pluto_mode not in ("mjpeg", "audio"):
+                pluto_mode = "mjpeg"
+            if pluto_mode == "audio":
+                stream.audio_only = True
+                self._html(render_audio_page(stream.id, sync_ms))
+            else:
+                self._html(render_watch_page(stream.id, sync_ms))
 
         elif path == "/stop_stream":
             sid = qs.get("sid", [None])[0]
@@ -3820,6 +4086,15 @@ class Handler(BaseHTTPRequestHandler):
             except ValueError as e:
                 self._error(400, str(e))
                 return
+            mode = (qs.get("mode", ["mjpeg"])[0] or "mjpeg").lower()
+            if mode not in ("mjpeg", "mp4", "audio"):
+                mode = "mjpeg"
+
+            if mode == "mp4":
+                direct_url, err = _resolve_mp4_url(video_url, quality)
+                self._html(render_mp4_page(direct_url, error_msg=err))
+                return
+
             try:
                 seek_s = max(0.0, float(qs.get("seek", [0])[0] or 0))
             except (ValueError, TypeError):
@@ -3831,7 +4106,11 @@ class Handler(BaseHTTPRequestHandler):
                 reuse_existing=False,
             )
             stream.seek_s = seek_s
-            self._html(render_watch_page(stream.id, sync_ms, video_url, quality))
+            if mode == "audio":
+                stream.audio_only = True
+                self._html(render_audio_page(stream.id, sync_ms))
+            else:
+                self._html(render_watch_page(stream.id, sync_ms, video_url, quality))
 
         elif path == "/stream":
             raw_sync = qs.get("sync", [None])[0]
