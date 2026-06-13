@@ -25,6 +25,7 @@ services:
       STREAM_HEIGHT: 720   # use 1080 for 1080p
       MAX_STREAMS:   3    # max parallel videos
       PLUTO_LANGS:   es,en  # comma-separated Pluto TV regions: es, en, de, fr, it, …
+      YT_LANG:       es    # BCP-47 tag for YouTube titles: es=Spanish, leave empty for original
       LOCAL_MEDIA_DIR: /media
       IPTV_LISTS_DIR: /iptv_lists
       # SUBSCRIPTIONS_FILE: /config/subscriptions.json  # path inside container (default)

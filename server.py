@@ -64,14 +64,16 @@ SUBSCRIPTIONS_FILE  = os.environ.get("SUBSCRIPTIONS_FILE", "/config/subscription
 ACE_STREAMS_FILE    = os.environ.get("ACE_STREAMS_FILE", "/config/ace_streams.json")
 FAVORITES_FILE      = os.environ.get("FAVORITES_FILE", "/config/favorites.json")
 PROGRESS_FILE       = os.environ.get("PROGRESS_FILE", "/config/watch_progress.json")
+HOME_FEED_CACHE_FILE = os.environ.get("HOME_FEED_CACHE_FILE", "/config/home_feed_cache.json")
 # How many recent videos to fetch per channel for the Home feed
-HOME_FEED_PER_CHANNEL = int(os.environ.get("HOME_FEED_PER_CHANNEL", "3"))
+HOME_FEED_PER_CHANNEL = int(os.environ.get("HOME_FEED_PER_CHANNEL", "7"))
 # Max concurrent yt-dlp workers when building the Home feed
 HOME_FEED_WORKERS     = int(os.environ.get("HOME_FEED_WORKERS", "8"))
 # Cache the Home feed for this many seconds (0 = disabled)
 HOME_FEED_CACHE_SECS  = int(os.environ.get("HOME_FEED_CACHE_SECS", str(30 * 60)))
-# Only show videos uploaded within this many days (0 = no filter)
-HOME_FEED_MAX_AGE_DAYS = int(os.environ.get("HOME_FEED_MAX_AGE_DAYS", "7"))
+# Only show videos uploaded within this many days (0 = no filter; 0 recommended since yt-dlp
+# often returns NA for upload_date in flat-playlist mode)
+HOME_FEED_MAX_AGE_DAYS = int(os.environ.get("HOME_FEED_MAX_AGE_DAYS", "0"))
 # Comma-separated list of Pluto TV language codes to load, e.g. "es,en"
 PLUTO_LANGS         = [l.strip() for l in os.environ.get("PLUTO_LANGS", "es,en").split(",") if l.strip()]
 PLUTO_REFRESH_SECS  = int(os.environ.get("PLUTO_REFRESH_SECS", str(60 * 60)))  # 1 h
@@ -495,11 +497,12 @@ def _probe_fps(url: str) -> float | None:
 
 def _yt_lang_args() -> list[str]:
     """Extra yt-dlp flags to request content in the configured YT_LANG."""
-    lang = YT_LANG or "original"
-    args = ["--extractor-args", f"youtubetab:lang={lang}"]
-    if YT_LANG:
-        args += ["--add-header", f"Accept-Language:{YT_LANG},*;q=0.5"]
-    return args
+    if not YT_LANG:
+        return []
+    return [
+        "--extractor-args", f"youtubetab:lang={YT_LANG}",
+        "--add-header", f"Accept-Language:{YT_LANG},*;q=0.5",
+    ]
 
 
 def fetch_title(stream: Stream):
@@ -712,6 +715,32 @@ def _save_progress(data: dict) -> None:
 # ── Home feed cache ───────────────────────────────────────────────────────────
 _home_feed_cache: dict = {"videos": [], "built_at": 0.0}
 _home_feed_lock  = threading.Lock()
+
+
+def _load_home_feed_disk_cache() -> None:
+    """Load persisted home feed cache from disk on startup."""
+    try:
+        if os.path.isfile(HOME_FEED_CACHE_FILE):
+            with open(HOME_FEED_CACHE_FILE, encoding="utf-8") as f:
+                data = json.load(f)
+            if data.get("videos") and data.get("built_at"):
+                _home_feed_cache["videos"]   = data["videos"]
+                _home_feed_cache["built_at"] = float(data["built_at"])
+                log.info(f"Loaded home feed cache from disk: {len(data['videos'])} videos")
+    except Exception as e:
+        log.warning(f"Could not load home feed disk cache: {e}")
+
+
+def _save_home_feed_disk_cache(videos: list[dict], built_at: float) -> None:
+    """Persist home feed cache to disk so it survives container restarts."""
+    try:
+        os.makedirs(os.path.dirname(HOME_FEED_CACHE_FILE), exist_ok=True)
+        tmp = HOME_FEED_CACHE_FILE + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump({"videos": videos, "built_at": built_at}, f)
+        os.replace(tmp, HOME_FEED_CACHE_FILE)
+    except Exception as e:
+        log.warning(f"Could not save home feed disk cache: {e}")
 
 
 def _fetch_channel_videos(channel_url: str, channel_name: str, n: int) -> list[dict]:
@@ -936,7 +965,6 @@ def _start_muxed_pipeline(stream: Stream):
         # Video output (stdout / pipe:1)
         "-map", "0:v:0",
         "-vf", vf,
-        "-fps_mode", "vfr",
         "-vcodec", "mjpeg",
         "-q:v", str(FFMPEG_QUALITY),
         "-r", str(MJPEG_FPS),
@@ -1012,7 +1040,6 @@ def _run_hls_pipeline(stream: Stream):
                     f":force_original_aspect_ratio=decrease,"
                     f"pad={STREAM_WIDTH}:{STREAM_HEIGHT}:(ow-iw)/2:(oh-ih)/2:black"
                 ),
-                "-fps_mode", "vfr",
                 "-vcodec", "mjpeg",
                 "-q:v", str(FFMPEG_QUALITY),
                 "-r", str(MJPEG_FPS),
@@ -1158,8 +1185,6 @@ def run_pipeline(stream: Stream):
                         f":force_original_aspect_ratio=decrease,"
                         f"pad={STREAM_WIDTH}:{STREAM_HEIGHT}:(ow-iw)/2:(oh-ih)/2:black"
                     ),
-                    # No -fps_mode cfr: let ffmpeg pass frames at source timing.
-                    # -r caps the output rate without forcing duplication.
                     "-vcodec", "mjpeg",
                     "-q:v", str(FFMPEG_QUALITY),
                     "-r", str(output_fps),
@@ -1894,7 +1919,7 @@ STATUS_HTML = """<!DOCTYPE html>
   function renderPluto(channels) {
     plutoList.innerHTML = "";
     var lastCat = null;
-    var currentGroup = null;
+    var currentRow = null;
     channels.forEach(function (ch) {
       if (ch.category && ch.category !== lastCat) {
         lastCat = ch.category;
@@ -1904,20 +1929,22 @@ STATUS_HTML = """<!DOCTYPE html>
           "text-transform:uppercase;border-top:1px solid var(--border);margin-top:8px;";
         hdr.textContent = ch.category;
         plutoList.appendChild(hdr);
-        currentGroup = document.createElement("div");
-        currentGroup.style.cssText = "display:flex;flex-wrap:wrap;gap:8px;margin-bottom:4px;";
-        plutoList.appendChild(currentGroup);
+        currentRow = document.createElement("div");
+        currentRow.style.cssText = "display:flex;gap:8px;overflow-x:auto;padding-bottom:6px;" +
+          "scrollbar-width:thin;-webkit-overflow-scrolling:touch;";
+        plutoList.appendChild(currentRow);
       }
-      if (!currentGroup) {
-        currentGroup = document.createElement("div");
-        currentGroup.style.cssText = "display:flex;flex-wrap:wrap;gap:8px;margin-bottom:4px;";
-        plutoList.appendChild(currentGroup);
+      if (!currentRow) {
+        currentRow = document.createElement("div");
+        currentRow.style.cssText = "display:flex;gap:8px;overflow-x:auto;padding-bottom:6px;" +
+          "scrollbar-width:thin;-webkit-overflow-scrolling:touch;";
+        plutoList.appendChild(currentRow);
       }
       var btn = document.createElement("button");
       btn.textContent = ch.name;
       btn.style.cssText = "font-family:monospace;font-size:.85rem;padding:7px 14px;" +
         "border-radius:6px;border:1px solid var(--border);background:var(--input-bg);" +
-        "color:var(--text);cursor:pointer;white-space:nowrap;";
+        "color:var(--text);cursor:pointer;white-space:nowrap;flex-shrink:0;";
       btn.addEventListener("mouseenter", function () { btn.style.borderColor = "var(--red)"; btn.style.color = "var(--red)"; });
       btn.addEventListener("mouseleave", function () { btn.style.borderColor = "var(--border)"; btn.style.color = "var(--text)"; });
       btn.addEventListener("click", function () {
@@ -1930,7 +1957,7 @@ STATUS_HTML = """<!DOCTYPE html>
         }
         window.location.href = buildWatchUrl(ch.url, "", plutoSync.value);
       });
-      currentGroup.appendChild(btn);
+      currentRow.appendChild(btn);
     });
   }
 
@@ -3844,19 +3871,24 @@ class Handler(BaseHTTPRequestHandler):
         t0 = time.time()
         videos = _build_home_feed(channels)
 
-        if HOME_FEED_MAX_AGE_DAYS > 0:
+        # Filter by age only when upload_date is reliably present (>50% of videos have a date).
+        # yt-dlp flat-playlist often returns NA, making the age filter delete everything.
+        dated = sum(1 for v in videos if v.get("upload_date") and v["upload_date"] != "NA")
+        if HOME_FEED_MAX_AGE_DAYS > 0 and dated > len(videos) * 0.5:
             cutoff = time.strftime("%Y%m%d", time.gmtime(time.time() - HOME_FEED_MAX_AGE_DAYS * 86400))
             before = len(videos)
-            videos = [v for v in videos if (v.get("upload_date") or "0") >= cutoff]
+            videos = [v for v in videos if (v.get("upload_date") or "99991231") >= cutoff]
             log.info(f"Home feed: {before} raw → {len(videos)} within {HOME_FEED_MAX_AGE_DAYS}d in {time.time()-t0:.1f}s")
         else:
-            log.info(f"Home feed built: {len(videos)} videos in {time.time()-t0:.1f}s")
+            log.info(f"Home feed built: {len(videos)} videos ({dated} dated) in {time.time()-t0:.1f}s")
 
+        built_at = time.time()
         with _home_feed_lock:
             _home_feed_cache["videos"]   = videos
-            _home_feed_cache["built_at"] = time.time()
+            _home_feed_cache["built_at"] = built_at
 
-        self._json({"videos": videos, "built_at": int(time.time()), "cached": False})
+        _save_home_feed_disk_cache(videos, built_at)
+        self._json({"videos": videos, "built_at": int(built_at), "cached": False})
 
     # ── IPTV lists ────────────────────────────────────────────────────────────
     def _serve_iptv_lists(self):
@@ -4311,12 +4343,40 @@ def main():
     log.info("═" * 52)
 
     pluto_cache.start_background_refresh()
+    _load_home_feed_disk_cache()
 
     def _stream_reaper():
         while True:
             time.sleep(60)
             registry.cleanup_old()
     threading.Thread(target=_stream_reaper, daemon=True).start()
+
+    def _home_feed_refresher():
+        """Build home feed on startup then refresh every 6 hours."""
+        # Small delay so the server is ready before the first fetch
+        time.sleep(5)
+        while True:
+            if not os.path.isfile(SUBSCRIPTIONS_FILE):
+                time.sleep(300)
+                continue
+            try:
+                with open(SUBSCRIPTIONS_FILE, encoding="utf-8") as f:
+                    data = json.load(f)
+                channels = data.get("channels", [])
+            except Exception:
+                channels = []
+            if channels:
+                log.info(f"Background home feed refresh ({len(channels)} channels)…")
+                t0 = time.time()
+                videos = _build_home_feed(channels)
+                built_at = time.time()
+                with _home_feed_lock:
+                    _home_feed_cache["videos"]   = videos
+                    _home_feed_cache["built_at"] = built_at
+                _save_home_feed_disk_cache(videos, built_at)
+                log.info(f"Background home feed done: {len(videos)} videos in {built_at-t0:.1f}s")
+            time.sleep(6 * 3600)
+    threading.Thread(target=_home_feed_refresher, daemon=True).start()
 
     server = ThreadedHTTPServer((HOST, PORT), Handler)
 
