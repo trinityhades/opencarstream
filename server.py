@@ -3291,94 +3291,19 @@ WATCH_HTML = """<!DOCTYPE html>
     }, 1000);
   }
 
-  // ── A/V drift detection + auto-correction ───────────────────────────────
-  // Video clock = frames received / streamFps (relative to stream start)
-  // Audio clock = audio.currentTime (browser's precise playback clock)
-  // Drift = video_clock - audio_clock (+ means video ahead / audio behind)
-  //
-  // Tiers:
-  //   |drift| < 0.15s  → ignore (within tolerance)
-  //   0.15–0.8s        → auto-correct silently (nudge audio.currentTime on VOD,
-  //                       or pause/resume on live)
-  //   0.8–3.0s         → auto-correct + show indicator
-  //   > 3.0s           → offer full reload resync
-  var AUTO_CORRECT_LO  = 0.15;
-  var AUTO_CORRECT_HI  = 0.8;
-  var RELOAD_THRESHOLD = 3.0;
-  var DRIFT_INTERVAL   = 5000;  // check every 5s
-  var driftBanner      = null;
-  var autoCorrectCount = 0;
-
-  function checkDrift() {
-    if (!streamFps || audio.currentTime < 5) return;
-    var isLive = !isFinite(audio.duration);
-    var videoClockS = frameCount / streamFps;
-    var audioClockS = audio.currentTime;
-    var drift = videoClockS - audioClockS;  // + = video ahead, audio late
-    var absDrift = Math.abs(drift);
-
-    // Update live drift display
-    if (driftLiveEl) {
-      driftLiveEl.textContent = absDrift < 0.05 ? "" :
-        "drift:" + (drift >= 0 ? "+" : "") + drift.toFixed(2) + "s";
-      driftLiveEl.style.color = absDrift < AUTO_CORRECT_HI ? "var(--muted)" : "#f5c518";
-    }
-
-    if (absDrift < AUTO_CORRECT_LO) {
-      if (driftBanner) driftBanner.style.display = "none";
-      return;
-    }
-
-    if (absDrift > RELOAD_THRESHOLD && videoUrl) {
-      // Large drift — offer reload resync
-      if (!driftBanner) {
-        driftBanner = document.createElement("div");
-        driftBanner.style.cssText = "margin-top:8px;padding:8px 14px;background:#0d1a0d;" +
-          "border:1px solid #2a5c2a;border-radius:6px;font-size:.85rem;" +
-          "display:flex;align-items:center;gap:12px;flex-wrap:wrap;";
-        document.querySelector(".wrap").appendChild(driftBanner);
-      }
-      var aheadStr = drift > 0 ? "video +" + drift.toFixed(1) + "s ahead"
-                                : "audio +" + (-drift).toFixed(1) + "s ahead";
-      driftBanner.innerHTML =
-        '<span style="color:#f5c518;">⚠ ' + aheadStr + '</span>' +
-        '<a id="drift-fix" style="color:#f5c518;cursor:pointer;text-decoration:underline;font-weight:600;">Resync</a>' +
-        '<button id="drift-dismiss" style="background:none;border:none;color:#888;font-size:.8rem;cursor:pointer;text-decoration:underline;">ignore</button>';
-      driftBanner.style.display = "flex";
-      document.getElementById("drift-fix").addEventListener("click", function () {
-        var targetS = Math.max(0, Math.round(baseSeekS + audio.currentTime));
-        saveProgress(targetS);
-        window.location.href = buildResumeUrl(targetS);
-      });
-      document.getElementById("drift-dismiss").addEventListener("click", function () {
-        driftBanner.style.display = "none";
-        frameCount = Math.round(audio.currentTime * streamFps);
-      });
-      return;
-    }
-
-    // Auto-correct small/medium drift
-    if (driftBanner) driftBanner.style.display = "none";
-    // Correct 70% of drift to avoid oscillation
-    var correction = drift * 0.7;
-    autoCorrectCount++;
-    if (drift > 0) {
-      // Video ahead → audio is late → skip audio forward
-      if (!isLive) {
-        audio.currentTime = Math.max(0, audio.currentTime + correction);
-      } else {
-        // Live: can't seek; pause briefly
-        audio.pause();
-        setTimeout(resumeAudio, Math.round(correction * 1000));
-      }
-    } else {
-      // Audio ahead → pause audio briefly to let video catch up
-      audio.pause();
-      setTimeout(resumeAudio, Math.round((-correction) * 1000));
-    }
-  }
-
-  setInterval(checkDrift, DRIFT_INTERVAL);
+  // ── Live drift display (read-only, no auto-correction) ──────────────────
+  // Video clock = frames received / streamFps
+  // Audio clock = audio.currentTime
+  // Drift = video - audio  (+ = video ahead / audio behind)
+  setInterval(function () {
+    if (!streamFps || audio.currentTime < 2) return;
+    var drift = frameCount / streamFps - audio.currentTime;
+    var abs = Math.abs(drift);
+    if (!driftLiveEl) return;
+    driftLiveEl.textContent = abs < 0.05 ? "" :
+      "drift:" + (drift >= 0 ? "+" : "") + drift.toFixed(2) + "s";
+    driftLiveEl.style.color = abs < 0.5 ? "var(--muted)" : "#f5c518";
+  }, 2000);
 
   // ── Progress save / resume ──────────────────────────────────────────────
   var progressKey = videoUrl || localFile;
