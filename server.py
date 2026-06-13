@@ -4239,9 +4239,20 @@ class Handler(BaseHTTPRequestHandler):
                 local_mode = "mjpeg"
 
             if local_mode == "mp4":
-                self._html(render_mp4_page(
-                    "/file_serve?path=" + quote(local_file, safe="")
-                ))
+                vcodec, acodec = _probe_local_codecs(local_file)
+                fname = os.path.basename(local_file)
+                # Browsers support H.264/H.265 video and AAC/MP3 audio natively in MP4
+                video_ok = vcodec in ("h264", "hevc")
+                audio_ok = acodec in ("aac", "mp3", "")
+                if video_ok and audio_ok:
+                    log.info(f"MP4 {fname}: video:{vcodec}→copy, audio:{acodec or 'none'}→copy (direct)")
+                    mp4_url = "/file_serve?path=" + quote(local_file, safe="")
+                else:
+                    vlog = f"video:{vcodec or '?'}→{'copy' if video_ok else 'h264'}"
+                    alog = f"audio:{acodec or '?'}→{'copy' if audio_ok else 'aac'}"
+                    log.info(f"MP4 {fname}: {vlog}, {alog} (transcoding)")
+                    mp4_url = "/stream_fmp4?url=" + quote(file_url, safe="")
+                self._html(render_mp4_page(mp4_url))
                 return
 
             if local_mode == "audio":
@@ -4683,12 +4694,12 @@ class Handler(BaseHTTPRequestHandler):
             else:
                 video_args = ["-c:v", "libx264", "-preset", "ultrafast", "-tune", "zerolatency", "-crf", "23"]
                 vlog = f"video:{vcodec or '?'}→h264"
-            if acodec in ("aac", "mp3"):
-                audio_args = ["-c:a", "copy"]
-                alog = f"audio:{acodec}→copy"
+            if acodec in ("aac", "mp3", ""):
+                audio_args = ["-c:a", "copy"] if acodec else []
+                alog = f"audio:{acodec or 'none'}→copy"
             else:
                 audio_args = ["-c:a", "aac", "-b:a", "192k", "-ar", "48000", "-ac", "2"]
-                alog = f"audio:{acodec or '?'}→aac"
+                alog = f"audio:{acodec}→aac"
             log.info(f"fMP4 {fname}: {vlog}, {alog}")
         else:
             video_args = ["-c:v", "libx264", "-preset", "ultrafast", "-tune", "zerolatency", "-crf", "23"]
