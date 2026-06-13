@@ -529,6 +529,30 @@ def fetch_title(stream: Stream):
         pass
 
 
+def _fetch_duration_s(url: str) -> int:
+    """Return video duration in seconds via yt-dlp, or 0 if live/unknown."""
+    if _is_direct_stream(url):
+        return 0
+    try:
+        r = subprocess.run(
+            ["yt-dlp", "--js-runtimes", "node", "--no-playlist",
+             "--print", "%(duration)s\t%(is_live)s", "--quiet", url],
+            capture_output=True, text=True, timeout=20,
+        )
+        if r.returncode != 0:
+            return 0
+        parts = r.stdout.strip().split("\t")
+        is_live = (parts[1].strip().lower() if len(parts) > 1 else "") in ("true", "1")
+        if is_live:
+            return 0
+        try:
+            return max(0, int(float(parts[0].strip())))
+        except (ValueError, IndexError):
+            return 0
+    except Exception:
+        return 0
+
+
 def _is_direct_hls(url: str) -> bool:
     """True for raw HLS manifest URLs that ffmpeg can consume directly."""
     from urllib.parse import urlparse
@@ -999,10 +1023,10 @@ def _direct_input_args(url: str) -> list[str]:
 
 def _resolve_mp4_url(url: str, quality: int | None) -> tuple[str, str]:
     """Resolve a direct playable URL for MP4/native mode. Returns (direct_url, error)."""
-    # Local files: serve via the /file_serve endpoint so the browser can load them
+    # Local files: transcode via /stream_fmp4 to ensure H.264+AAC browser compat
+    # (handles Xvid, AC3, DTS, MPEG-2, HEVC and any other unsupported codec)
     if _is_local_media_url(url):
-        local_path = _ffmpeg_input_target(url)
-        return "/file_serve?path=" + quote(local_path, safe=""), ""
+        return "/stream_fmp4?url=" + quote(url, safe=""), ""
 
     # HLS manifests — most browsers (including Tesla/WebKit) play these natively
     if _is_direct_hls(url):
@@ -1013,11 +1037,13 @@ def _resolve_mp4_url(url: str, quality: int | None) -> tuple[str, str]:
     if _is_acestream(url) or _is_rtp_stream(url) or _is_local_network_stream(url):
         return "/stream_fmp4?url=" + quote(url, safe=""), ""
 
-    # YouTube, Twitch, etc: resolve a direct CDN URL via yt-dlp
+    # YouTube, Twitch, etc: resolve a direct CDN URL via yt-dlp, then route
+    # through /stream_fmp4 so ffmpeg transcodes to H.264+AAC for browser compat
+    # (avoids AC3/EAC3/DTS audio and non-H.264 video codecs like Xvid, VP9, etc.)
     fmt = (
-        f"best[ext=mp4][height<={quality}]/best[height<={quality}]/best[ext=mp4]/best"
+        f"best[height<={quality}]/best"
         if quality
-        else "best[ext=mp4]/best"
+        else "best"
     )
     try:
         r = subprocess.run(
@@ -1028,7 +1054,7 @@ def _resolve_mp4_url(url: str, quality: int | None) -> tuple[str, str]:
         if r.returncode == 0:
             lines = [l.strip() for l in r.stdout.strip().splitlines() if l.strip()]
             if lines:
-                return lines[0], ""
+                return "/stream_fmp4?url=" + quote(lines[0], safe=""), ""
     except Exception as e:
         return "", str(e)
     return "", "Could not resolve a direct playable URL"
@@ -3737,10 +3763,11 @@ AUDIO_WATCH_HTML = """<!DOCTYPE html>
   </div>
 <script>
 (function () {
-  var sid      = "{{stream_id}}";
-  var syncMs   = "{{sync_ms}}";
-  var videoUrl = "{{video_url}}";
-  var seekS    = parseInt("{{seek_s}}", 10) || 0;
+  var sid        = "{{stream_id}}";
+  var syncMs     = "{{sync_ms}}";
+  var videoUrl   = "{{video_url}}";
+  var seekS      = parseInt("{{seek_s}}", 10) || 0;
+  var durationS  = parseInt("{{duration_s}}", 10) || 0;  // 0 = unknown/live
   if (!sid) { window.location.href = "/"; return; }
 
   var audio      = document.getElementById("audio");
@@ -3768,7 +3795,10 @@ AUDIO_WATCH_HTML = """<!DOCTYPE html>
   audio.addEventListener("playing", function () { statusEl.textContent = "Playing"; });
   audio.addEventListener("waiting", function () { statusEl.textContent = "Buffering…"; });
   audio.addEventListener("loadedmetadata", function () {
-    if (!isFinite(audio.duration)) {
+    // audio.duration is always Infinity for piped MP3 streams; use durationS
+    // (fetched via yt-dlp) to distinguish live streams from VODs.
+    var isLiveStream = !isFinite(audio.duration) && durationS === 0;
+    if (isLiveStream) {
       liveBadge.style.display = "inline-block";
       elapsedEl.style.display = "none";
       seekBar.style.display   = videoUrl ? "" : "none";  // hide seek for live without url
@@ -3964,12 +3994,13 @@ def render_watch_page(stream_id: str, sync_ms: int, video_url: str = "", quality
             .replace("{{local_file}}", local_file)
             .replace("{{seek_s}}", str(seek_s)))
 
-def render_audio_page(stream_id: str, sync_ms: int, video_url: str = "", seek_s: int = 0) -> str:
+def render_audio_page(stream_id: str, sync_ms: int, video_url: str = "", seek_s: int = 0, duration_s: int = 0) -> str:
     return (AUDIO_WATCH_HTML
             .replace("{{stream_id}}", stream_id)
             .replace("{{sync_ms}}", str(sync_ms))
             .replace("{{video_url}}", video_url)
-            .replace("{{seek_s}}", str(seek_s)))
+            .replace("{{seek_s}}", str(seek_s))
+            .replace("{{duration_s}}", str(duration_s)))
 
 def render_mp4_page(direct_url: str, error_msg: str = "", stream_title: str = "") -> str:
     return (MP4_WATCH_HTML
@@ -4244,9 +4275,12 @@ class Handler(BaseHTTPRequestHandler):
                 if ch:
                     stream.title = ch["name"]
             pluto_mode = (qs.get("mode", ["mjpeg"])[0] or "mjpeg").lower()
-            if pluto_mode not in ("mjpeg", "audio"):
+            if pluto_mode not in ("mjpeg", "mp4", "audio"):
                 pluto_mode = "mjpeg"
-            if pluto_mode == "audio":
+            if pluto_mode == "mp4":
+                direct_url, err = _resolve_mp4_url(pluto_url, None)
+                self._html(render_mp4_page(direct_url, error_msg=err, stream_title=stream.title))
+            elif pluto_mode == "audio":
                 stream.audio_only = True
                 self._html(render_audio_page(stream.id, sync_ms))
             else:
@@ -4314,7 +4348,8 @@ class Handler(BaseHTTPRequestHandler):
             stream.seek_s = seek_s
             if mode == "audio":
                 stream.audio_only = True
-                self._html(render_audio_page(stream.id, sync_ms, video_url, int(seek_s)))
+                duration_s = _fetch_duration_s(video_url)
+                self._html(render_audio_page(stream.id, sync_ms, video_url, int(seek_s), duration_s))
             else:
                 self._html(render_watch_page(stream.id, sync_ms, video_url, quality))
 
@@ -4608,15 +4643,22 @@ class Handler(BaseHTTPRequestHandler):
         })
 
     def _serve_fmp4_direct(self, url: str):
-        """Remux a live stream to fragmented MP4 for native browser <video> playback."""
+        """Remux/transcode a live stream to fragmented MP4 for native browser <video> playback."""
         ff_cmd = [
             "ffmpeg",
             "-loglevel", "error",
             *_direct_input_args(url),
             "-i", _ffmpeg_input_target(url),
-            "-c:v", "copy",
+            # Transcode video to H.264 so browsers can play any source codec (xvid, mpeg2, hevc, etc.)
+            "-c:v", "libx264",
+            "-preset", "ultrafast",
+            "-tune", "zerolatency",
+            "-crf", "23",
+            # Transcode audio to AAC (handles AC3, EAC3, DTS, MP2, etc.)
             "-c:a", "aac",
             "-b:a", "192k",
+            "-ar", "48000",
+            "-ac", "2",
             "-movflags", "frag_keyframe+empty_moov+default_base_moof",
             "-f", "mp4",
             "pipe:1",
