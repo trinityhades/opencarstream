@@ -4676,17 +4676,20 @@ class Handler(BaseHTTPRequestHandler):
         audio_args: list[str]
         if _is_local_media_url(url):
             vcodec, acodec = _probe_local_codecs(_ffmpeg_input_target(url))
-            # H.264 and H.265 are directly playable; copy to avoid CPU transcode
-            # H.265 needs a level/profile flag but browsers handle it in fMP4
+            fname = os.path.basename(_ffmpeg_input_target(url))
             if vcodec in ("h264", "hevc"):
                 video_args = ["-c:v", "copy"]
+                vlog = f"video:{vcodec}→copy"
             else:
                 video_args = ["-c:v", "libx264", "-preset", "ultrafast", "-tune", "zerolatency", "-crf", "23"]
-            # AAC and MP3 are directly playable; copy to avoid audio re-encode
+                vlog = f"video:{vcodec or '?'}→h264"
             if acodec in ("aac", "mp3"):
                 audio_args = ["-c:a", "copy"]
+                alog = f"audio:{acodec}→copy"
             else:
                 audio_args = ["-c:a", "aac", "-b:a", "192k", "-ar", "48000", "-ac", "2"]
+                alog = f"audio:{acodec or '?'}→aac"
+            log.info(f"fMP4 {fname}: {vlog}, {alog}")
         else:
             video_args = ["-c:v", "libx264", "-preset", "ultrafast", "-tune", "zerolatency", "-crf", "23"]
             audio_args = ["-c:a", "aac", "-b:a", "192k", "-ar", "48000", "-ac", "2"]
@@ -4737,40 +4740,43 @@ class Handler(BaseHTTPRequestHandler):
             self._error(500, str(e))
             return
 
-        range_header = self.headers.get("Range", "")
-        if range_header.startswith("bytes="):
-            parts = range_header[6:].split("-")
-            start = int(parts[0]) if parts[0] else 0
-            end   = int(parts[1]) if len(parts) > 1 and parts[1] else size - 1
-            end   = min(end, size - 1)
-            length = end - start + 1
-            self.send_response(206)
-            self.send_header("Content-Type", mime)
-            self.send_header("Content-Range", f"bytes {start}-{end}/{size}")
-            self.send_header("Content-Length", str(length))
-            self.send_header("Accept-Ranges", "bytes")
-            self.end_headers()
-            with open(abs_path, "rb") as f:
-                f.seek(start)
-                remaining = length
-                while remaining > 0:
-                    chunk = f.read(min(65536, remaining))
-                    if not chunk:
-                        break
-                    self.wfile.write(chunk)
-                    remaining -= len(chunk)
-        else:
-            self.send_response(200)
-            self.send_header("Content-Type", mime)
-            self.send_header("Content-Length", str(size))
-            self.send_header("Accept-Ranges", "bytes")
-            self.end_headers()
-            with open(abs_path, "rb") as f:
-                while True:
-                    chunk = f.read(65536)
-                    if not chunk:
-                        break
-                    self.wfile.write(chunk)
+        try:
+            range_header = self.headers.get("Range", "")
+            if range_header.startswith("bytes="):
+                parts = range_header[6:].split("-")
+                start = int(parts[0]) if parts[0] else 0
+                end   = int(parts[1]) if len(parts) > 1 and parts[1] else size - 1
+                end   = min(end, size - 1)
+                length = end - start + 1
+                self.send_response(206)
+                self.send_header("Content-Type", mime)
+                self.send_header("Content-Range", f"bytes {start}-{end}/{size}")
+                self.send_header("Content-Length", str(length))
+                self.send_header("Accept-Ranges", "bytes")
+                self.end_headers()
+                with open(abs_path, "rb") as f:
+                    f.seek(start)
+                    remaining = length
+                    while remaining > 0:
+                        chunk = f.read(min(65536, remaining))
+                        if not chunk:
+                            break
+                        self.wfile.write(chunk)
+                        remaining -= len(chunk)
+            else:
+                self.send_response(200)
+                self.send_header("Content-Type", mime)
+                self.send_header("Content-Length", str(size))
+                self.send_header("Accept-Ranges", "bytes")
+                self.end_headers()
+                with open(abs_path, "rb") as f:
+                    while True:
+                        chunk = f.read(65536)
+                        if not chunk:
+                            break
+                        self.wfile.write(chunk)
+        except (BrokenPipeError, ConnectionResetError):
+            pass
 
     def _serve_local_media(self, rel_dir: str | None = None):
         base = os.path.abspath(LOCAL_MEDIA_DIR)
