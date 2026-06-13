@@ -17,6 +17,7 @@ import signal
 import json
 import logging
 from collections import deque
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from urllib.parse import urlparse, parse_qs, unquote, quote
 from socketserver import ThreadingMixIn
@@ -61,6 +62,13 @@ LOCAL_MEDIA_VIDEO_DELAY_MS = int(
 )
 SUBSCRIPTIONS_FILE  = os.environ.get("SUBSCRIPTIONS_FILE", "/config/subscriptions.json")
 ACE_STREAMS_FILE    = os.environ.get("ACE_STREAMS_FILE", "/config/ace_streams.json")
+FAVORITES_FILE      = os.environ.get("FAVORITES_FILE", "/config/favorites.json")
+# How many recent videos to fetch per channel for the Home feed
+HOME_FEED_PER_CHANNEL = int(os.environ.get("HOME_FEED_PER_CHANNEL", "2"))
+# Max concurrent yt-dlp workers when building the Home feed
+HOME_FEED_WORKERS     = int(os.environ.get("HOME_FEED_WORKERS", "8"))
+# Cache the Home feed for this many seconds (0 = disabled)
+HOME_FEED_CACHE_SECS  = int(os.environ.get("HOME_FEED_CACHE_SECS", str(30 * 60)))
 # Comma-separated list of Pluto TV language codes to load, e.g. "es,en"
 PLUTO_LANGS         = [l.strip() for l in os.environ.get("PLUTO_LANGS", "es,en").split(",") if l.strip()]
 PLUTO_REFRESH_SECS  = int(os.environ.get("PLUTO_REFRESH_SECS", str(60 * 60)))  # 1 h
@@ -74,6 +82,9 @@ PLUTO_XFF_MAP       = _parse_lang_map(os.environ.get("PLUTO_XFF_MAP", "en:8.8.8.
 LOCAL_MEDIA_DIR     = os.environ.get("LOCAL_MEDIA_DIR", "/media/videos")
 IPTV_LISTS_DIR      = os.environ.get("IPTV_LISTS_DIR", "/iptv_lists")
 MAX_STREAM_AGE_S    = int(os.environ.get("MAX_STREAM_AGE_S", str(5 * 3600)))  # stop streams older than this
+# BCP-47 language tag for YouTube titles/descriptions, e.g. "es", "fr", "de".
+# Leave empty ("") to use YouTube's default (usually matches the video's original language).
+YT_LANG             = os.environ.get("YT_LANG", "")
 LOCAL_MEDIA_EXTS    = {
     ".mp4", ".mkv", ".webm", ".avi", ".mov", ".m4v", ".mpg", ".mpeg", ".ts",
 }
@@ -451,6 +462,16 @@ pluto_cache = PlutoCache()
 
 
 # ── Pipeline ──────────────────────────────────────────────────────────────────
+def _yt_lang_args() -> list[str]:
+    """Extra yt-dlp flags to request content in the configured YT_LANG."""
+    if not YT_LANG:
+        return []
+    return [
+        "--extractor-args", f"youtubetab:lang={YT_LANG}",
+        "--add-header", f"Accept-Language:{YT_LANG},*;q=0.5",
+    ]
+
+
 def fetch_title(stream: Stream):
     if _is_direct_stream(stream.url):
         return  # no yt-dlp for direct streams; title stays empty
@@ -617,6 +638,102 @@ def _save_ace_streams(streams: list[dict]) -> None:
     with _ace_streams_lock:
         with open(ACE_STREAMS_FILE, "w", encoding="utf-8") as f:
             json.dump(streams, f, indent=2)
+
+
+_favorites_lock = threading.Lock()
+
+def _load_favorites() -> list[str]:
+    """Return list of favorited channel URLs."""
+    if not os.path.isfile(FAVORITES_FILE):
+        return []
+    try:
+        with open(FAVORITES_FILE, encoding="utf-8") as f:
+            data = json.load(f)
+            return data if isinstance(data, list) else []
+    except Exception:
+        return []
+
+def _save_favorites(urls: list[str]) -> None:
+    os.makedirs(os.path.dirname(FAVORITES_FILE) or ".", exist_ok=True)
+    with _favorites_lock:
+        with open(FAVORITES_FILE, "w", encoding="utf-8") as f:
+            json.dump(urls, f, indent=2)
+
+
+# ── Home feed cache ───────────────────────────────────────────────────────────
+_home_feed_cache: dict = {"videos": [], "built_at": 0.0}
+_home_feed_lock  = threading.Lock()
+
+
+def _fetch_channel_videos(channel_url: str, channel_name: str, n: int) -> list[dict]:
+    """Fetch the n most recent videos for one channel. Returns [] on any failure."""
+    try:
+        r = subprocess.run(
+            [
+                "yt-dlp",
+                "--js-runtimes", "node",
+                "--flat-playlist",
+                "--playlist-end", str(n),
+                "--print", "%(id)s\t%(title)s\t%(duration)s\t%(thumbnail)s\t%(webpage_url)s\t%(upload_date)s",
+                "--no-warnings",
+                "--quiet",
+                *_yt_lang_args(),
+                channel_url,
+            ],
+            capture_output=True, text=True, timeout=25,
+        )
+    except Exception:
+        return []
+
+    if r.returncode != 0:
+        return []
+
+    videos = []
+    for line in r.stdout.strip().splitlines():
+        parts = line.split("\t", 5)
+        if len(parts) < 2:
+            continue
+        vid_id      = parts[0].strip()
+        title       = parts[1].strip()
+        duration    = parts[2].strip() if len(parts) > 2 else ""
+        thumb       = parts[3].strip() if len(parts) > 3 else ""
+        webpage     = parts[4].strip() if len(parts) > 4 else ""
+        upload_date = parts[5].strip() if len(parts) > 5 else ""
+        if not vid_id or vid_id == "NA":
+            continue
+        video_url = webpage if (webpage and webpage != "NA") else f"https://www.youtube.com/watch?v={vid_id}"
+        if not thumb or thumb == "NA":
+            thumb = f"https://i.ytimg.com/vi/{vid_id}/mqdefault.jpg"
+        videos.append({
+            "id":          vid_id,
+            "title":       title,
+            "duration":    duration,
+            "thumb":       thumb,
+            "url":         video_url,
+            "upload_date": upload_date if upload_date != "NA" else "",
+            "channel":     channel_name,
+            "channel_url": channel_url,
+        })
+    return videos
+
+
+def _build_home_feed(channels: list[dict]) -> list[dict]:
+    """Fetch recent videos from all channels concurrently and return sorted list."""
+    all_videos: list[dict] = []
+    with ThreadPoolExecutor(max_workers=HOME_FEED_WORKERS) as pool:
+        futures = {
+            pool.submit(_fetch_channel_videos, ch["url"], ch["name"], HOME_FEED_PER_CHANNEL): ch
+            for ch in channels
+        }
+        for future in as_completed(futures):
+            try:
+                all_videos.extend(future.result())
+            except Exception:
+                pass
+
+    # Sort newest-first; entries without a date go to the end
+    all_videos.sort(key=lambda v: v.get("upload_date") or "0", reverse=True)
+    return all_videos
 
 
 def _scan_iptv_lists() -> tuple[str, list[dict[str, str]], str]:
@@ -1176,6 +1293,7 @@ STATUS_HTML = """<!DOCTYPE html>
 
 <div class="tabs">
   <button class="tab-btn active" data-tab="stream">Stream</button>
+  <button class="tab-btn" data-tab="home">Home</button>
   <button class="tab-btn" data-tab="feed">YouTube</button>
   <button class="tab-btn" data-tab="twitch">Twitch</button>
   <button class="tab-btn" data-tab="pluto">Pluto TV</button>
@@ -1225,6 +1343,23 @@ STATUS_HTML = """<!DOCTYPE html>
 </div>
 </div>
 
+<!-- ── Home tab ── -->
+<div class="tab-panel" id="tab-home">
+  <div class="card">
+    <h2>Subscription feed</h2>
+    <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:14px;">
+      <div id="home-quality-btns" style="display:flex;gap:6px;flex-wrap:wrap;"></div>
+      <div id="home-sync-btns" style="display:flex;gap:6px;flex-wrap:wrap;"></div>
+      <button id="home-refresh"
+              style="background:transparent;color:var(--muted);border:1px solid var(--border);border-radius:6px;padding:8px 14px;font-family:'Orbitron',monospace;font-size:.7rem;letter-spacing:.08em;cursor:pointer;margin-left:auto;">
+        ↺ REFRESH
+      </button>
+    </div>
+    <div class="feed-status" id="home-status">Open this tab to load your subscription feed.</div>
+    <div class="feed-grid" id="home-grid"></div>
+  </div>
+</div>
+
 <!-- ── Feed tab ── -->
 <div class="tab-panel" id="tab-feed">
   <div class="card">
@@ -1244,7 +1379,7 @@ STATUS_HTML = """<!DOCTYPE html>
              style="flex:1;min-width:180px;background:var(--input-bg);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:8px 12px;font-family:monospace;display:none;">
     </div>
     <div class="feed-status" id="subs-status"></div>
-    <div id="subs-list" style="display:flex;flex-direction:column;gap:0;"></div>
+    <div id="subs-list" style="display:flex;flex-direction:column;gap:0;max-height:420px;overflow-y:auto;border:1px solid var(--border);border-radius:6px;padding:0 4px;"></div>
   </div>
 
   <!-- YouTube search -->
@@ -1461,6 +1596,21 @@ STATUS_HTML = """<!DOCTYPE html>
       document.getElementById("tab-" + target).classList.add("active");
     });
   });
+
+  // ── Shared utilities ──
+  function pad(n) { return n < 10 ? "0" + n : "" + n; }
+  function fmtDuration(secs) {
+    var s = parseInt(secs, 10);
+    if (!s || isNaN(s)) return "";
+    var h = Math.floor(s / 3600);
+    var m = Math.floor((s % 3600) / 60);
+    var sec = s % 60;
+    if (h > 0) return h + ":" + pad(m) + ":" + pad(sec);
+    return m + ":" + pad(sec);
+  }
+  function escHtml(s) {
+    return (s || "").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+  }
 
   // ── Button group helper ──
   function createButtonGroup(containerId, options, defaultValue) {
@@ -1988,6 +2138,86 @@ STATUS_HTML = """<!DOCTYPE html>
     loadIptvLists(true);
   });
 
+  // ── Home tab ──
+  var homeGrid      = document.getElementById("home-grid");
+  var homeStatus    = document.getElementById("home-status");
+  var homeRefresh   = document.getElementById("home-refresh");
+  var homeLoaded    = false;
+
+  var homeQuality = createButtonGroup("home-quality-btns", [
+    { value: "", label: "AUTO" },
+    { value: "1080", label: "1080p" },
+    { value: "720", label: "720p" },
+    { value: "480", label: "480p" },
+    { value: "360", label: "360p" }
+  ], "");
+
+  var homeSync = createButtonGroup("home-sync-btns", [
+    { value: "0", label: "0s" },
+    { value: "500", label: "0.5s" },
+    { value: "1000", label: "1s" },
+    { value: "1500", label: "1.5s" },
+    { value: "2000", label: "2s" },
+    { value: "2500", label: "2.5s" },
+    { value: "3000", label: "3s" },
+    { value: "3500", label: "3.5s" },
+    { value: "4000", label: "4s" }
+  ], "{{audio_delay_ms}}");
+
+  function loadHomeFeed(force) {
+    homeStatus.textContent = "Loading subscription feed… this may take a minute.";
+    homeRefresh.disabled = true;
+    var url = "/subscriptions_feed" + (force ? "?force=1" : "");
+    var xhr = new XMLHttpRequest();
+    xhr.open("GET", url, true);
+    xhr.timeout = 300000;
+    xhr.onreadystatechange = function () {
+      if (xhr.readyState !== 4) return;
+      homeRefresh.disabled = false;
+      var data;
+      try { data = JSON.parse(xhr.responseText); } catch(e) {
+        homeStatus.textContent = "Failed to parse response."; return;
+      }
+      if (data.error) { homeStatus.textContent = "Error: " + data.error; return; }
+      var videos = data.videos || [];
+      homeGrid.innerHTML = "";
+      if (!videos.length) { homeStatus.textContent = "No videos found."; return; }
+      var cachedNote = data.cached ? " (cached)" : "";
+      var builtDate  = data.built_at ? new Date(data.built_at * 1000).toLocaleTimeString() : "";
+      homeStatus.textContent = videos.length + " videos" + cachedNote + (builtDate ? " · updated " + builtDate : "");
+      videos.forEach(function (v) {
+        var card = document.createElement("div");
+        card.className = "feed-card";
+        var dur = fmtDuration(v.duration);
+        var dateStr = "";
+        if (v.upload_date && v.upload_date.length === 8) {
+          dateStr = v.upload_date.slice(0,4) + "-" + v.upload_date.slice(4,6) + "-" + v.upload_date.slice(6,8);
+        }
+        card.innerHTML =
+          '<img class="feed-thumb" src="' + (v.thumb || "") + '" loading="lazy" alt="">' +
+          '<div class="feed-info">' +
+          '<div class="feed-title">' + escHtml(v.title) + '</div>' +
+          '<div style="display:flex;justify-content:space-between;align-items:center;margin-top:3px;">' +
+          '<div style="font-size:.75rem;color:var(--red);font-family:\'Orbitron\',monospace;letter-spacing:.04em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:65%;">' + escHtml(v.channel || "") + '</div>' +
+          '<div style="font-family:monospace;font-size:.72rem;color:var(--muted);white-space:nowrap;">' + (dur ? escHtml(dur) + (dateStr ? " · " : "") : "") + escHtml(dateStr) + '</div>' +
+          '</div>' +
+          '</div>';
+        card.addEventListener("click", function () {
+          window.location.href = buildWatchUrl(v.url, homeQuality.value, homeSync.value);
+        });
+        homeGrid.appendChild(card);
+      });
+      homeLoaded = true;
+    };
+    xhr.send();
+  }
+
+  homeRefresh.addEventListener("click", function () { loadHomeFeed(true); });
+
+  document.querySelector('[data-tab="home"]').addEventListener("click", function () {
+    if (!homeLoaded) loadHomeFeed(false);
+  });
+
   // ── Feed tab ──
   var feedChannel  = document.getElementById("feed-channel");
   var feedGoBtn    = document.getElementById("feed-go");
@@ -2039,18 +2269,42 @@ STATUS_HTML = """<!DOCTYPE html>
     xhr.send();
   })();
 
-  // ── Favorites (persisted in localStorage) ────────────────────────────────
-  var FAVS_KEY = "ocs_fav_channels";
-  function loadFavs() {
-    try { return JSON.parse(localStorage.getItem(FAVS_KEY) || "{}"); } catch(e) { return {}; }
+  // ── Favorites (persisted server-side in /config/favorites.json) ─────────
+  var serverFavs = [];  // set of URLs, loaded once and kept in sync
+
+  function fetchFavs(cb) {
+    var xhr = new XMLHttpRequest();
+    xhr.open("GET", "/favorites", true);
+    xhr.timeout = 5000;
+    xhr.onreadystatechange = function () {
+      if (xhr.readyState !== 4) return;
+      try { serverFavs = JSON.parse(xhr.responseText).favorites || []; } catch(e) { serverFavs = []; }
+      if (cb) cb();
+    };
+    xhr.send();
   }
-  function saveFavs(favs) {
-    try { localStorage.setItem(FAVS_KEY, JSON.stringify(favs)); } catch(e) {}
+
+  function toggleFav(url, isFav, cb) {
+    var xhr = new XMLHttpRequest();
+    if (isFav) {
+      xhr.open("DELETE", "/favorites?url=" + encodeURIComponent(url), true);
+      xhr.send();
+    } else {
+      xhr.open("POST", "/favorites", true);
+      xhr.setRequestHeader("Content-Type", "application/json");
+      xhr.send(JSON.stringify({url: url}));
+    }
+    xhr.onreadystatechange = function () {
+      if (xhr.readyState !== 4) return;
+      try { serverFavs = JSON.parse(xhr.responseText).favorites || []; } catch(e) {}
+      if (cb) cb();
+    };
   }
+
   function sortWithFavs(channels) {
-    var favs = loadFavs();
     return channels.slice().sort(function(a, b) {
-      var fa = favs[a.url] ? 1 : 0, fb = favs[b.url] ? 1 : 0;
+      var fa = serverFavs.indexOf(a.url) !== -1 ? 1 : 0;
+      var fb = serverFavs.indexOf(b.url) !== -1 ? 1 : 0;
       if (fa !== fb) return fb - fa;
       return a.name.localeCompare(b.name);
     });
@@ -2058,10 +2312,9 @@ STATUS_HTML = """<!DOCTYPE html>
 
   function renderChannelList(channels) {
     subsList.innerHTML = "";
-    var favs = loadFavs();
     var sorted = sortWithFavs(channels);
     sorted.forEach(function (ch) {
-      var isFav = !!favs[ch.url];
+      var isFav = serverFavs.indexOf(ch.url) !== -1;
       var row = document.createElement("div");
       row.className = "stream-row";
       row.style.cursor = "pointer";
@@ -2073,10 +2326,8 @@ STATUS_HTML = """<!DOCTYPE html>
       star.style.cssText = "font-size:1.2rem;margin-right:8px;flex-shrink:0;color:" + (isFav ? "#f5c518" : "var(--muted)") + ";cursor:pointer;user-select:none;";
       star.addEventListener("click", function (e) {
         e.stopPropagation();
-        var f = loadFavs();
-        if (f[ch.url]) { delete f[ch.url]; } else { f[ch.url] = true; }
-        saveFavs(f);
-        applyFilter();
+        var wasFav = serverFavs.indexOf(ch.url) !== -1;
+        toggleFav(ch.url, wasFav, function () { applyFilter(); });
       });
 
       var label = document.createElement("a");
@@ -2135,7 +2386,7 @@ STATUS_HTML = """<!DOCTYPE html>
       subsStatus.textContent = allChannels.length + " channels" + syncedAt;
       subsFilter.style.display = "";
       subsFilter.value = "";
-      renderChannelList(allChannels);
+      fetchFavs(function () { renderChannelList(allChannels); });
     };
     xhr.send();
   });
@@ -2195,18 +2446,6 @@ STATUS_HTML = """<!DOCTYPE html>
     };
     xhr.send();
   })();
-
-  function fmtDuration(secs) {
-    var s = parseInt(secs, 10);
-    if (!s || isNaN(s)) return "";
-    var h = Math.floor(s / 3600);
-    var m = Math.floor((s % 3600) / 60);
-    var sec = s % 60;
-    if (h > 0) return h + ":" + pad(m) + ":" + pad(sec);
-    return m + ":" + pad(sec);
-  }
-
-  function pad(n) { return n < 10 ? "0" + n : "" + n; }
 
   var feedMoreWrap = document.getElementById("feed-more-wrap");
   var feedMoreBtn  = document.getElementById("feed-more");
@@ -2359,10 +2598,6 @@ STATUS_HTML = """<!DOCTYPE html>
     feedLimit += 12;
     loadFeed(true);
   });
-
-  function escHtml(s) {
-    return (s || "").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
-  }
 
   feedGoBtn.addEventListener("click", loadFeed);
   feedChannel.addEventListener("keydown", function (e) {
@@ -3189,6 +3424,13 @@ class Handler(BaseHTTPRequestHandler):
         elif path == "/ace_streams":
             self._serve_ace_streams()
 
+        elif path == "/favorites":
+            self._json({"favorites": _load_favorites()})
+
+        elif path == "/subscriptions_feed":
+            force = qs.get("force", [None])[0] == "1"
+            self._serve_subscriptions_feed(force)
+
         else:
             self._error(404, "Not found")
 
@@ -3213,6 +3455,25 @@ class Handler(BaseHTTPRequestHandler):
             streams.append({"name": name, "id": cid})
             _save_ace_streams(streams)
             self._json({"ok": True, "streams": streams})
+
+        elif path == "/favorites":
+            length = int(self.headers.get("Content-Length", 0))
+            body   = self.rfile.read(length)
+            try:
+                item = json.loads(body)
+            except Exception:
+                self._error(400, "Invalid JSON")
+                return
+            url = (item.get("url") or "").strip()
+            if not url:
+                self._error(400, "Missing url")
+                return
+            favs = _load_favorites()
+            if url not in favs:
+                favs.append(url)
+                _save_favorites(favs)
+            self._json({"ok": True, "favorites": favs})
+
         else:
             self._error(404, "Not found")
 
@@ -3235,6 +3496,18 @@ class Handler(BaseHTTPRequestHandler):
             streams.pop(idx)
             _save_ace_streams(streams)
             self._json({"ok": True, "streams": streams})
+
+        elif path == "/favorites":
+            qs  = parse_qs(parsed.query)
+            url = (qs.get("url", [None])[0] or "").strip()
+            if not url:
+                self._error(400, "Missing ?url= parameter")
+                return
+            favs = _load_favorites()
+            favs = [f for f in favs if f != url]
+            _save_favorites(favs)
+            self._json({"ok": True, "favorites": favs})
+
         else:
             self._error(404, "Not found")
 
@@ -3258,6 +3531,43 @@ class Handler(BaseHTTPRequestHandler):
             "synced_at": data.get("synced_at", ""),
             "channels":  data.get("channels", []),
         })
+
+    def _serve_subscriptions_feed(self, force: bool = False):
+        if not os.path.isfile(SUBSCRIPTIONS_FILE):
+            self._error(503, "Subscriptions file not found")
+            return
+        try:
+            with open(SUBSCRIPTIONS_FILE, encoding="utf-8") as f:
+                data = json.load(f)
+        except Exception as e:
+            self._error(500, f"Failed to read subscriptions file: {e}")
+            return
+
+        channels = data.get("channels", [])
+        if not channels:
+            self._json({"videos": [], "built_at": 0, "cached": False})
+            return
+
+        with _home_feed_lock:
+            age = time.time() - _home_feed_cache["built_at"]
+            if not force and HOME_FEED_CACHE_SECS > 0 and age < HOME_FEED_CACHE_SECS and _home_feed_cache["videos"]:
+                self._json({
+                    "videos":   _home_feed_cache["videos"],
+                    "built_at": int(_home_feed_cache["built_at"]),
+                    "cached":   True,
+                })
+                return
+
+        log.info(f"Building home feed from {len(channels)} channels ({HOME_FEED_WORKERS} workers)…")
+        t0 = time.time()
+        videos = _build_home_feed(channels)
+        log.info(f"Home feed built: {len(videos)} videos in {time.time()-t0:.1f}s")
+
+        with _home_feed_lock:
+            _home_feed_cache["videos"]   = videos
+            _home_feed_cache["built_at"] = time.time()
+
+        self._json({"videos": videos, "built_at": int(time.time()), "cached": False})
 
     # ── IPTV lists ────────────────────────────────────────────────────────────
     def _serve_iptv_lists(self):
@@ -3373,6 +3683,7 @@ class Handler(BaseHTTPRequestHandler):
                     "--print", "%(id)s\t%(title)s\t%(duration)s\t%(thumbnail)s\t%(webpage_url)s",
                     "--no-warnings",
                     "--quiet",
+                    *_yt_lang_args(),
                     url,
                 ],
                 capture_output=True, text=True, timeout=20,
@@ -3432,6 +3743,7 @@ class Handler(BaseHTTPRequestHandler):
                     "--print", "%(id)s\t%(title)s\t%(duration)s\t%(thumbnail)s\t%(webpage_url)s",
                     "--no-warnings",
                     "--quiet",
+                    *_yt_lang_args(),
                     search_url,
                 ],
                 capture_output=True, text=True, timeout=25,
