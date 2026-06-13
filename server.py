@@ -843,6 +843,14 @@ def _fetch_channel_videos(channel_url: str, channel_name: str, n: int) -> list[d
         upload_date = parts[5].strip() if len(parts) > 5 else ""
         if not vid_id or vid_id == "NA":
             continue
+        # Skip Shorts: duration <= 60s, or webpage URL is a /shorts/ link.
+        try:
+            if duration and duration != "NA" and float(duration) <= 60:
+                continue
+        except ValueError:
+            pass
+        if webpage and "/shorts/" in webpage:
+            continue
         video_url = webpage if (webpage and webpage != "NA") else f"https://www.youtube.com/watch?v={vid_id}"
         if not thumb or thumb == "NA":
             thumb = f"https://i.ytimg.com/vi/{vid_id}/mqdefault.jpg"
@@ -3190,8 +3198,11 @@ WATCH_HTML = """<!DOCTYPE html>
     }
   }
 
+  var rateTimer = null;
   function applyAudioDelta(deltaS) {
     clearTimeout(pauseTimer);
+    clearTimeout(rateTimer);
+    audio.playbackRate = 1.0;
     audioDelayS = Math.round((audioDelayS + deltaS) * 10) / 10;
     updateSyncDisplay();
     var isLive = !isFinite(audio.duration);
@@ -3200,11 +3211,21 @@ WATCH_HTML = """<!DOCTYPE html>
       audio.pause();
       pauseTimer = setTimeout(resumeAudio, Math.round(deltaS * 1000));
     } else {
-      // Audio plays earlier → skip forward (VOD only; live can't seek)
+      // Audio plays earlier
       if (!isLive) {
+        // VOD: skip the audio forward
         audio.currentTime = Math.max(0, audio.currentTime + (-deltaS));
+        resumeAudio();
+      } else {
+        // Live: can't seek, so play at 2x for |deltaS| seconds. That
+        // advances audio by |deltaS| seconds of real-time content,
+        // undoing prior positive offsets (and going negative further).
+        resumeAudio();
+        audio.playbackRate = 2.0;
+        rateTimer = setTimeout(function () {
+          audio.playbackRate = 1.0;
+        }, Math.round((-deltaS) * 1000));
       }
-      resumeAudio();
     }
   }
 
