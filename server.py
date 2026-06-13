@@ -792,9 +792,10 @@ def _fetch_channel_videos(channel_url: str, channel_name: str, n: int) -> list[d
             "duration":    duration,
             "thumb":       thumb,
             "url":         video_url,
-            "upload_date": upload_date if upload_date != "NA" else "",
+            "upload_date": upload_date if upload_date and upload_date != "NA" else "",
             "channel":     channel_name,
             "channel_url": channel_url,
+            "fetch_idx":   len(videos),  # position within channel (0 = newest)
         })
     return videos
 
@@ -813,9 +814,19 @@ def _build_home_feed(channels: list[dict]) -> list[dict]:
             except Exception:
                 pass
 
-    # Sort newest-first; entries without a date go to the end
-    all_videos.sort(key=lambda v: v.get("upload_date") or "0", reverse=True)
-    return all_videos
+    # Sort newest-first by upload_date; videos without a date sort by fetch
+    # position (0=newest per channel) so undated videos interleave naturally.
+    all_videos.sort(key=lambda v: (
+        0 if v.get("upload_date") else 1,
+        v.get("upload_date") or "",
+        -v.get("fetch_idx", 0),
+    ), reverse=False)
+    # flip: dated ones should be descending, undated ones ascending by fetch_idx
+    dated   = [v for v in all_videos if v.get("upload_date")]
+    undated = [v for v in all_videos if not v.get("upload_date")]
+    dated.sort(key=lambda v: v["upload_date"], reverse=True)
+    undated.sort(key=lambda v: v.get("fetch_idx", 0))
+    return dated + undated
 
 
 def _scan_iptv_lists() -> tuple[str, list[dict[str, str]], str]:
@@ -969,9 +980,9 @@ def _start_muxed_pipeline(stream: Stream):
         # Video output (stdout / pipe:1)
         "-map", "0:v:0",
         "-vf", vf,
-        "-fps_mode", "vfr",
         "-vcodec", "mjpeg",
         "-q:v", str(FFMPEG_QUALITY),
+        "-r", str(MJPEG_FPS),
         "-f", "image2pipe",
         "-vframes", "99999999",
         "pipe:1",
@@ -1044,9 +1055,9 @@ def _run_hls_pipeline(stream: Stream):
                     f":force_original_aspect_ratio=decrease,"
                     f"pad={STREAM_WIDTH}:{STREAM_HEIGHT}:(ow-iw)/2:(oh-ih)/2:black"
                 ),
-                "-fps_mode", "vfr",
                 "-vcodec", "mjpeg",
                 "-q:v", str(FFMPEG_QUALITY),
+                "-r", str(MJPEG_FPS),
                 "-an",
                 "-f", "image2pipe",
                 "-vframes", "99999999",
@@ -1189,9 +1200,9 @@ def run_pipeline(stream: Stream):
                         f":force_original_aspect_ratio=decrease,"
                         f"pad={STREAM_WIDTH}:{STREAM_HEIGHT}:(ow-iw)/2:(oh-ih)/2:black"
                     ),
-                    "-fps_mode", "vfr",
                     "-vcodec", "mjpeg",
                     "-q:v", str(FFMPEG_QUALITY),
+                    "-r", str(MJPEG_FPS),
                     "-f", "image2pipe",
                     "-vframes", "99999999",
                     "pipe:1",
@@ -1224,9 +1235,9 @@ def run_pipeline(stream: Stream):
                         f":force_original_aspect_ratio=decrease,"
                         f"pad={STREAM_WIDTH}:{STREAM_HEIGHT}:(ow-iw)/2:(oh-ih)/2:black"
                     ),
-                    "-fps_mode", "vfr",
                     "-vcodec", "mjpeg",
                     "-q:v", str(FFMPEG_QUALITY),
+                    "-r", str(MJPEG_FPS),
                     "-f", "image2pipe",
                     "-vframes", "99999999",
                     "pipe:1",
@@ -1287,11 +1298,12 @@ def run_pipeline(stream: Stream):
                         if stream.first_frame_at is None:
                             stream.first_frame_at = time.time()
 
-            yt_rc = yt_proc.poll()
+            yt_rc = yt_proc.poll() if yt_proc is not None else None
             ff_rc = ff_proc.poll()
             yt_err = "".join(yt_stderr_chunks).strip()
             ff_err = "".join(ff_stderr_chunks).strip()
-            yt_err_t.join(timeout=0.2)
+            if yt_proc is not None:
+                yt_err_t.join(timeout=0.2)
             ff_err_t.join(timeout=0.2)
 
             produced_frames = stream.frame is not None and stream.frame is not frame_before
@@ -1546,7 +1558,7 @@ STATUS_HTML = """<!DOCTYPE html>
     <h2>Channels</h2>
     <div id="pluto-lang-btns" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px;"></div>
     <div class="feed-status" id="pluto-status">Open this tab to load channels.</div>
-    <div id="pluto-list"></div>
+    <div id="pluto-list" style="max-height:520px;overflow-y:auto;border:1px solid var(--border);border-radius:8px;padding:0 10px 10px;"></div>
   </div>
 </div>
 
@@ -1926,35 +1938,23 @@ STATUS_HTML = """<!DOCTYPE html>
   function renderPluto(channels) {
     plutoList.innerHTML = "";
     var lastCat = null;
-    var currentRow = null;
     channels.forEach(function (ch) {
       if (ch.category && ch.category !== lastCat) {
         lastCat = ch.category;
         var hdr = document.createElement("div");
         hdr.style.cssText = "font-family:'Orbitron',monospace;font-size:.7rem;" +
-          "letter-spacing:.12em;color:var(--muted);padding:12px 0 6px;" +
-          "text-transform:uppercase;border-top:1px solid var(--border);margin-top:8px;";
+          "letter-spacing:.12em;color:var(--muted);padding:10px 0 4px;" +
+          "text-transform:uppercase;border-top:1px solid var(--border);margin-top:4px;";
         hdr.textContent = ch.category;
         plutoList.appendChild(hdr);
-        currentRow = document.createElement("div");
-        currentRow.style.cssText = "display:flex;gap:8px;overflow-x:auto;padding-bottom:6px;" +
-          "scrollbar-width:thin;-webkit-overflow-scrolling:touch;";
-        plutoList.appendChild(currentRow);
       }
-      if (!currentRow) {
-        currentRow = document.createElement("div");
-        currentRow.style.cssText = "display:flex;gap:8px;overflow-x:auto;padding-bottom:6px;" +
-          "scrollbar-width:thin;-webkit-overflow-scrolling:touch;";
-        plutoList.appendChild(currentRow);
-      }
-      var btn = document.createElement("button");
-      btn.textContent = ch.name;
-      btn.style.cssText = "font-family:monospace;font-size:.85rem;padding:7px 14px;" +
-        "border-radius:6px;border:1px solid var(--border);background:var(--input-bg);" +
-        "color:var(--text);cursor:pointer;white-space:nowrap;flex-shrink:0;";
-      btn.addEventListener("mouseenter", function () { btn.style.borderColor = "var(--red)"; btn.style.color = "var(--red)"; });
-      btn.addEventListener("mouseleave", function () { btn.style.borderColor = "var(--border)"; btn.style.color = "var(--text)"; });
-      btn.addEventListener("click", function () {
+      var row = document.createElement("div");
+      row.className = "stream-row";
+      row.style.cursor = "pointer";
+      row.innerHTML =
+        '<span style="font-size:.95rem;">' + escHtml(ch.name) + '</span>' +
+        '<span style="font-family:monospace;font-size:.75rem;color:var(--muted);">LIVE →</span>';
+      row.addEventListener("click", function () {
         if (ch.id && plutoActiveLang) {
           window.location.href =
             "/pluto_watch?lang=" + encodeURIComponent(plutoActiveLang) +
@@ -1964,7 +1964,7 @@ STATUS_HTML = """<!DOCTYPE html>
         }
         window.location.href = buildWatchUrl(ch.url, "", plutoSync.value);
       });
-      currentRow.appendChild(btn);
+      plutoList.appendChild(row);
     });
   }
 
@@ -2261,7 +2261,7 @@ STATUS_HTML = """<!DOCTYPE html>
     card.className = "feed-card";
     var dur = fmtDuration(v.duration);
     var dateStr = "";
-    if (v.upload_date && v.upload_date.length === 8) {
+    if (v.upload_date && v.upload_date.length === 8 && v.upload_date !== "NA") {
       dateStr = v.upload_date.slice(0,4) + "-" + v.upload_date.slice(4,6) + "-" + v.upload_date.slice(6,8);
     }
     card.innerHTML =
@@ -2269,8 +2269,11 @@ STATUS_HTML = """<!DOCTYPE html>
       '<div class="feed-info">' +
       '<div class="feed-title">' + escHtml(v.title) + '</div>' +
       '<div style="display:flex;justify-content:space-between;align-items:center;margin-top:4px;">' +
-      '<div style="font-size:.75rem;color:var(--red);font-family:Orbitron,monospace;letter-spacing:.04em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:65%;">' + escHtml(v.channel || "") + '</div>' +
-      '<div style="font-family:monospace;font-size:.75rem;color:var(--muted);white-space:nowrap;">' + (dur ? escHtml(dur) + (dateStr ? " · " : "") : "") + escHtml(dateStr) + '</div>' +
+      '<div style="font-size:.75rem;color:var(--red);font-family:Orbitron,monospace;letter-spacing:.04em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:60%;">' + escHtml(v.channel || "") + '</div>' +
+      '<div style="font-family:monospace;font-size:.75rem;color:var(--muted);white-space:nowrap;">' +
+        (dateStr ? '<span style="color:var(--text);">' + escHtml(dateStr) + '</span>' + (dur ? ' · ' : '') : '') +
+        (dur ? escHtml(dur) : '') +
+      '</div>' +
       '</div></div>';
     card.addEventListener("click", function () {
       window.location.href = buildWatchUrl(v.url, feedQuality.value, feedSync.value);
@@ -2306,15 +2309,8 @@ STATUS_HTML = """<!DOCTYPE html>
       if (data.error) { homeStatus.textContent = "Error: " + data.error; return; }
       var videos = data.videos || [];
       if (!videos.length) { homeStatus.textContent = "No videos found."; return; }
-      // Sort newest-first; videos with no date keep their original order at the end
-      videos.sort(function (a, b) {
-        var da = a.upload_date && a.upload_date !== "NA" ? a.upload_date : "";
-        var db = b.upload_date && b.upload_date !== "NA" ? b.upload_date : "";
-        if (da && db) return db.localeCompare(da);
-        if (da) return -1;
-        if (db) return 1;
-        return 0;
-      });
+      // Server already sorted: dated newest-first, then undated by channel position.
+      // Re-sort on client in case cache was built by an older version.
       homeAllVideos = videos;
       var cachedNote = data.cached ? " · cached" : "";
       var builtDate  = data.built_at ? new Date(data.built_at * 1000).toLocaleTimeString() : "";
@@ -2997,6 +2993,7 @@ WATCH_HTML = """<!DOCTYPE html>
   .resume-banner{margin-top:10px;padding:10px 14px;background:#1a1200;border:1px solid #6b4f00;border-radius:6px;font-size:.9rem;display:flex;align-items:center;gap:12px;flex-wrap:wrap;}
   .resume-banner a{color:#f5c518;font-weight:600;cursor:pointer;text-decoration:underline;}
   .resume-banner .dismiss{color:#888;font-size:.8rem;cursor:pointer;text-decoration:underline;background:none;border:none;}
+  .stream-title{font-size:.95rem;color:var(--text);font-family:'Rajdhani',sans-serif;font-weight:500;padding:8px 4px 2px;letter-spacing:.02em;min-height:1.4em;}
 </style>
 </head>
 <body>
@@ -3006,6 +3003,7 @@ WATCH_HTML = """<!DOCTYPE html>
   </div>
   <div class="wrap">
     <img id="mjpeg" alt="Live MJPEG stream">
+    <div id="stream-title" class="stream-title"></div>
     <audio id="audio" controls autoplay playsinline></audio>
     <div class="seek-bar">
       <button class="seek-btn" data-mins="-10">-10 min</button>
@@ -3180,8 +3178,9 @@ WATCH_HTML = """<!DOCTYPE html>
 
   img.addEventListener("load", function () { frameCount++; });
 
-  // Fetch actual fps from server once the stream is streaming
-  (function pollFps() {
+  // Fetch actual fps + title from server once the stream is live
+  var titleEl = document.getElementById("stream-title");
+  (function pollStatus() {
     var xhr = new XMLHttpRequest();
     xhr.open("GET", "/stream_status?sid=" + encodeURIComponent(sid), true);
     xhr.timeout = 3000;
@@ -3189,10 +3188,13 @@ WATCH_HTML = """<!DOCTYPE html>
       if (xhr.readyState !== 4) return;
       try {
         var d = JSON.parse(xhr.responseText);
-        if (d.fps && d.fps > 0) { streamFps = d.fps; return; }
-      } catch(e) {}
-      // retry until we have fps
-      setTimeout(pollFps, 2000);
+        if (d.fps && d.fps > 0) streamFps = d.fps;
+        if (d.title && titleEl.textContent !== d.title) titleEl.textContent = d.title;
+        // Keep polling until we have both fps and title
+        if (!streamFps || !d.title) setTimeout(pollStatus, 2000);
+      } catch(e) {
+        setTimeout(pollStatus, 2000);
+      }
     };
     xhr.send();
   })();
