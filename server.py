@@ -1649,13 +1649,17 @@ STATUS_HTML = """<!DOCTYPE html>
   // ── Tab switching (outside try-catch to guarantee it always works) ──
   var tabBtns = document.querySelectorAll(".tab-btn");
   var tabPanels = document.querySelectorAll(".tab-panel");
+  // Debug: show tab count so we can verify JS is running
+  document.title = "OCS [tabs:" + tabBtns.length + "]";
   Array.prototype.forEach.call(tabBtns, function (btn) {
     btn.addEventListener("click", function () {
       var target = btn.getAttribute("data-tab");
+      document.title = "OCS > " + target;
       Array.prototype.forEach.call(tabBtns, function (b) { b.classList.remove("active"); });
       Array.prototype.forEach.call(tabPanels, function (p) { p.classList.remove("active"); });
       btn.classList.add("active");
-      document.getElementById("tab-" + target).classList.add("active");
+      var panel = document.getElementById("tab-" + target);
+      if (panel) panel.classList.add("active");
     });
   });
 
