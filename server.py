@@ -1312,46 +1312,46 @@ STATUS_HTML = """<!DOCTYPE html>
   :root{--red:#e31937;--dark:#090909;--panel:#111117;--border:#252530;--text:#e0e0ee;--muted:#555568;--input-bg:#0d0d14;--thumb-bg:#1a1a24;}
   @media(prefers-color-scheme:light){:root{--dark:#f4f4f6;--panel:#ffffff;--border:#d8d8e0;--text:#1a1a2e;--muted:#888899;--input-bg:#eaeaf0;--thumb-bg:#dcdce8;}}
   *{margin:0;padding:0;box-sizing:border-box;}
-  body{background:var(--dark);color:var(--text);font-family:'Rajdhani',sans-serif;font-size:17px;min-height:100vh;display:flex;flex-direction:column;align-items:center;padding:20px 24px;}
-  h1{font-family:'Orbitron',monospace;font-weight:900;font-size:2rem;color:var(--red);letter-spacing:.12em;text-shadow:0 0 24px rgba(227,25,55,.45);margin-bottom:4px;}
-  .sub{color:var(--muted);font-size:.9rem;letter-spacing:.08em;text-transform:uppercase;margin-bottom:16px;}
-  .tabs{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:16px;width:100%;max-width:1600px;}
-  .tab-btn{font-family:'Orbitron',monospace;font-size:.7rem;letter-spacing:.08em;padding:8px 14px;border-radius:6px;border:1px solid var(--border);background:transparent;color:var(--muted);cursor:pointer;transition:all .15s;}
+  body{background:var(--dark);color:var(--text);font-family:'Rajdhani',sans-serif;font-size:21px;min-height:100vh;display:flex;flex-direction:column;align-items:center;padding:24px 32px;}
+  h1{font-family:'Orbitron',monospace;font-weight:900;font-size:2.4rem;color:var(--red);letter-spacing:.12em;text-shadow:0 0 24px rgba(227,25,55,.45);margin-bottom:6px;}
+  .sub{color:var(--muted);font-size:.9rem;letter-spacing:.08em;text-transform:uppercase;margin-bottom:20px;}
+  .tabs{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:20px;width:100%;max-width:1600px;}
+  .tab-btn{font-family:'Orbitron',monospace;font-size:.8rem;letter-spacing:.08em;padding:11px 20px;border-radius:8px;border:1px solid var(--border);background:transparent;color:var(--muted);cursor:pointer;transition:all .15s;}
   .tab-btn.active{background:var(--red);color:#fff;border-color:var(--red);}
   .tab-panel{display:none;width:100%;max-width:1600px;}
   .tab-panel.active{display:block;}
-  .card{background:var(--panel);border:1px solid var(--border);border-radius:10px;width:100%;padding:28px 32px;margin-bottom:20px;}
-  .card h2{font-family:'Orbitron',monospace;font-size:.85rem;letter-spacing:.15em;color:var(--muted);margin-bottom:18px;text-transform:uppercase;}
-  .usage{font-family:monospace;font-size:.95rem;background:var(--input-bg);border:1px solid var(--border);border-radius:6px;padding:14px 18px;line-height:1.9;word-break:break-all;}
+  .card{background:var(--panel);border:1px solid var(--border);border-radius:12px;width:100%;padding:32px 40px;margin-bottom:24px;}
+  .card h2{font-family:'Orbitron',monospace;font-size:.95rem;letter-spacing:.15em;color:var(--muted);margin-bottom:22px;text-transform:uppercase;}
+  .usage{font-family:monospace;font-size:1rem;background:var(--input-bg);border:1px solid var(--border);border-radius:8px;padding:18px 22px;line-height:2;word-break:break-all;}
   .usage span{color:var(--red);}
-  .stream-row{display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-bottom:1px solid var(--border);}
+  .stream-row{display:flex;justify-content:space-between;align-items:center;padding:14px 0;border-bottom:1px solid var(--border);}
   .stream-row:last-child{border-bottom:none;}
-  .badge{display:inline-block;padding:3px 10px;border-radius:20px;font-size:.75rem;letter-spacing:.06em;font-family:'Orbitron',monospace;}
+  .badge{display:inline-block;padding:4px 12px;border-radius:20px;font-size:.8rem;letter-spacing:.06em;font-family:'Orbitron',monospace;}
   .badge.streaming{background:rgba(0,200,100,.15);color:#00a852;border:1px solid rgba(0,200,100,.3);}
   .badge.starting{background:rgba(255,152,0,.12);color:#c97800;border:1px solid rgba(255,152,0,.3);}
   .badge.error{background:rgba(227,25,55,.12);color:var(--red);border:1px solid rgba(227,25,55,.3);}
   .badge.done{background:var(--input-bg);color:var(--muted);border:1px solid var(--border);}
-  .empty{color:var(--muted);font-size:.9rem;font-style:italic;}
+  .empty{color:var(--muted);font-size:1rem;font-style:italic;}
   a{color:var(--red);text-decoration:none;}a:hover{text-decoration:underline;}
-  .env-row{display:flex;gap:24px;flex-wrap:wrap;margin-top:4px;}
-  .env-item{font-family:monospace;font-size:.85rem;color:var(--muted);}
+  .env-row{display:flex;gap:28px;flex-wrap:wrap;margin-top:6px;}
+  .env-item{font-family:monospace;font-size:.9rem;color:var(--muted);}
   .env-item b{color:var(--text);}
   /* Feed tab */
-  .feed-controls{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:18px;}
-  .feed-controls input{flex:1;min-width:220px;background:var(--input-bg);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:10px 12px;font-family:monospace;font-size:.95rem;}
-  .feed-controls button{background:var(--red);color:white;border:0;border-radius:6px;padding:10px 16px;font-family:'Orbitron',monospace;letter-spacing:.08em;cursor:pointer;white-space:nowrap;}
-  .feed-status{color:var(--muted);font-size:.9rem;font-style:italic;margin-bottom:10px;min-height:1.4em;}
-  .feed-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:14px;}
-  .feed-card{background:var(--input-bg);border:1px solid var(--border);border-radius:8px;overflow:hidden;cursor:pointer;transition:border-color .15s;}
+  .feed-controls{display:flex;gap:12px;flex-wrap:wrap;align-items:center;margin-bottom:22px;}
+  .feed-controls input{flex:1;min-width:240px;background:var(--input-bg);color:var(--text);border:1px solid var(--border);border-radius:8px;padding:12px 16px;font-family:monospace;font-size:1rem;}
+  .feed-controls button{background:var(--red);color:white;border:0;border-radius:8px;padding:12px 20px;font-family:'Orbitron',monospace;letter-spacing:.08em;cursor:pointer;white-space:nowrap;font-size:.8rem;}
+  .feed-status{color:var(--muted);font-size:.9rem;font-style:italic;margin-bottom:12px;min-height:1.4em;}
+  .feed-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:18px;}
+  .feed-card{background:var(--input-bg);border:1px solid var(--border);border-radius:10px;overflow:hidden;cursor:pointer;transition:border-color .15s;}
   .feed-card:hover{border-color:var(--red);}
   .feed-thumb{width:100%;aspect-ratio:16/9;object-fit:cover;background:var(--thumb-bg);display:block;}
-  .feed-info{padding:8px 10px;}
-  .feed-title{font-size:.85rem;line-height:1.3;color:var(--text);margin-bottom:4px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;}
-  .feed-dur{font-family:monospace;font-size:.75rem;color:var(--muted);}
+  .feed-info{padding:10px 13px;}
+  .feed-title{font-size:.9rem;line-height:1.35;color:var(--text);margin-bottom:5px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;}
+  .feed-dur{font-family:monospace;font-size:.78rem;color:var(--muted);}
   /* shared input style for start-stream row */
-  #yt-id{flex:1;min-width:280px;background:var(--input-bg);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:10px 12px;font-family:monospace;}
-  select{background:var(--input-bg);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:10px 12px;font-family:monospace;}
-  footer{margin-top:26px;color:var(--muted);font-size:.78rem;letter-spacing:.04em;text-align:center;max-width:1600px;line-height:1.5;}
+  #yt-id{flex:1;min-width:300px;background:var(--input-bg);color:var(--text);border:1px solid var(--border);border-radius:8px;padding:12px 16px;font-family:monospace;font-size:1rem;}
+  select{background:var(--input-bg);color:var(--text);border:1px solid var(--border);border-radius:8px;padding:12px 16px;font-family:monospace;font-size:1rem;}
+  footer{margin-top:30px;color:var(--muted);font-size:.82rem;letter-spacing:.04em;text-align:center;max-width:1600px;line-height:1.6;}
 </style>
 </head>
 <body>
@@ -1360,7 +1360,6 @@ STATUS_HTML = """<!DOCTYPE html>
 
 <div class="tabs">
   <button class="tab-btn active" data-tab="stream">Stream</button>
-  <button class="tab-btn" data-tab="home">Home</button>
   <button class="tab-btn" data-tab="feed">YouTube</button>
   <button class="tab-btn" data-tab="twitch">Twitch</button>
   <button class="tab-btn" data-tab="pluto">Pluto TV</button>
@@ -1410,23 +1409,6 @@ STATUS_HTML = """<!DOCTYPE html>
 </div>
 </div>
 
-<!-- ── Home tab ── -->
-<div class="tab-panel" id="tab-home">
-  <div class="card">
-    <h2>Subscription feed</h2>
-    <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:14px;">
-      <div id="home-quality-btns" style="display:flex;gap:6px;flex-wrap:wrap;"></div>
-      <div id="home-sync-btns" style="display:flex;gap:6px;flex-wrap:wrap;"></div>
-      <button id="home-refresh"
-              style="background:transparent;color:var(--muted);border:1px solid var(--border);border-radius:6px;padding:8px 14px;font-family:'Orbitron',monospace;font-size:.7rem;letter-spacing:.08em;cursor:pointer;margin-left:auto;">
-        ↺ REFRESH
-      </button>
-    </div>
-    <div class="feed-status" id="home-status">Open this tab to load your subscription feed.</div>
-    <div class="feed-grid" id="home-grid"></div>
-  </div>
-</div>
-
 <!-- ── Feed tab ── -->
 <div class="tab-panel" id="tab-feed">
   <div class="card">
@@ -1437,16 +1419,29 @@ STATUS_HTML = """<!DOCTYPE html>
     </div>
   </div>
 
-  <!-- Subscriptions panel (shown when cookies available) -->
+  <!-- Home feed panel -->
+  <div class="card" id="home-card" style="display:none;">
+    <h2>Home feed</h2>
+    <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:14px;">
+      <button id="home-load" style="background:var(--red);color:white;border:0;border-radius:8px;padding:11px 20px;font-family:'Orbitron',monospace;font-size:.8rem;letter-spacing:.08em;cursor:pointer;">SHOW HOME FEED</button>
+      <button id="home-refresh" style="display:none;background:transparent;color:var(--muted);border:1px solid var(--border);border-radius:8px;padding:11px 18px;font-family:'Orbitron',monospace;font-size:.75rem;letter-spacing:.08em;cursor:pointer;">↺ REFRESH</button>
+      <div id="home-quality-btns" style="display:flex;gap:6px;flex-wrap:wrap;"></div>
+      <div id="home-sync-btns" style="display:flex;gap:6px;flex-wrap:wrap;"></div>
+    </div>
+    <div class="feed-status" id="home-status"></div>
+    <div class="feed-grid" id="home-grid"></div>
+  </div>
+
+  <!-- Subscriptions panel (shown when subscriptions file is mounted) -->
   <div class="card" id="subs-card" style="display:none;">
     <h2>My subscriptions</h2>
     <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:14px;">
-      <button id="subs-load" style="background:var(--red);color:white;border:0;border-radius:6px;padding:8px 16px;font-family:'Orbitron',monospace;letter-spacing:.08em;cursor:pointer;">LOAD SUBSCRIPTIONS</button>
+      <button id="subs-load" style="background:var(--red);color:white;border:0;border-radius:8px;padding:11px 20px;font-family:'Orbitron',monospace;font-size:.8rem;letter-spacing:.08em;cursor:pointer;">SHOW SUBSCRIPTIONS</button>
       <input id="subs-filter" type="text" placeholder="Filter channels…"
-             style="flex:1;min-width:180px;background:var(--input-bg);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:8px 12px;font-family:monospace;display:none;">
+             style="flex:1;min-width:180px;background:var(--input-bg);color:var(--text);border:1px solid var(--border);border-radius:8px;padding:10px 14px;font-family:monospace;font-size:.95rem;display:none;">
     </div>
     <div class="feed-status" id="subs-status"></div>
-    <div id="subs-list" style="display:flex;flex-direction:column;gap:0;max-height:420px;overflow-y:auto;border:1px solid var(--border);border-radius:6px;padding:0 4px;"></div>
+    <div id="subs-list" style="display:flex;flex-direction:column;gap:0;max-height:480px;overflow-y:auto;border:1px solid var(--border);border-radius:8px;padding:0 4px;"></div>
   </div>
 
   <!-- YouTube search -->
@@ -2205,11 +2200,13 @@ STATUS_HTML = """<!DOCTYPE html>
     loadIptvLists(true);
   });
 
-  // ── Home tab ──
-  var homeGrid      = document.getElementById("home-grid");
-  var homeStatus    = document.getElementById("home-status");
-  var homeRefresh   = document.getElementById("home-refresh");
-  var homeLoaded    = false;
+  // ── Home feed (inside YouTube tab) ──
+  var homeCard    = document.getElementById("home-card");
+  var homeGrid    = document.getElementById("home-grid");
+  var homeStatus  = document.getElementById("home-status");
+  var homeLoad    = document.getElementById("home-load");
+  var homeRefresh = document.getElementById("home-refresh");
+  var homeLoaded  = false;
 
   var homeQuality = createButtonGroup("home-quality-btns", [
     { value: "", label: "AUTO" },
@@ -2232,23 +2229,23 @@ STATUS_HTML = """<!DOCTYPE html>
   ], "{{audio_delay_ms}}");
 
   function loadHomeFeed(force) {
-    homeStatus.textContent = "Loading subscription feed… this may take a minute.";
-    homeRefresh.disabled = true;
-    var url = "/subscriptions_feed" + (force ? "?force=1" : "");
+    homeStatus.textContent = "Loading… this may take a minute.";
+    homeLoad.style.display = "none";
+    homeRefresh.style.display = "none";
+    homeGrid.innerHTML = "";
     var xhr = new XMLHttpRequest();
-    xhr.open("GET", url, true);
+    xhr.open("GET", "/subscriptions_feed" + (force ? "?force=1" : ""), true);
     xhr.timeout = 300000;
     xhr.onreadystatechange = function () {
       if (xhr.readyState !== 4) return;
-      homeRefresh.disabled = false;
+      homeRefresh.style.display = "";
       var data;
       try { data = JSON.parse(xhr.responseText); } catch(e) {
         homeStatus.textContent = "Failed to parse response."; return;
       }
       if (data.error) { homeStatus.textContent = "Error: " + data.error; return; }
       var videos = data.videos || [];
-      homeGrid.innerHTML = "";
-      if (!videos.length) { homeStatus.textContent = "No recent videos found (all channels quiet in the last 7 days)."; return; }
+      if (!videos.length) { homeStatus.textContent = "No recent videos (all channels quiet in the last 7 days)."; return; }
       var cachedNote = data.cached ? " · cached" : "";
       var builtDate  = data.built_at ? new Date(data.built_at * 1000).toLocaleTimeString() : "";
       homeStatus.textContent = videos.length + " videos" + cachedNote + (builtDate ? " · updated " + builtDate : "");
@@ -2264,11 +2261,10 @@ STATUS_HTML = """<!DOCTYPE html>
           '<img class="feed-thumb" src="' + (v.thumb || "") + '" loading="lazy" alt="">' +
           '<div class="feed-info">' +
           '<div class="feed-title">' + escHtml(v.title) + '</div>' +
-          '<div style="display:flex;justify-content:space-between;align-items:center;margin-top:3px;">' +
+          '<div style="display:flex;justify-content:space-between;align-items:center;margin-top:4px;">' +
           '<div style="font-size:.75rem;color:var(--red);font-family:\'Orbitron\',monospace;letter-spacing:.04em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:65%;">' + escHtml(v.channel || "") + '</div>' +
-          '<div style="font-family:monospace;font-size:.72rem;color:var(--muted);white-space:nowrap;">' + (dur ? escHtml(dur) + (dateStr ? " · " : "") : "") + escHtml(dateStr) + '</div>' +
-          '</div>' +
-          '</div>';
+          '<div style="font-family:monospace;font-size:.75rem;color:var(--muted);white-space:nowrap;">' + (dur ? escHtml(dur) + (dateStr ? " · " : "") : "") + escHtml(dateStr) + '</div>' +
+          '</div></div>';
         card.addEventListener("click", function () {
           window.location.href = buildWatchUrl(v.url, homeQuality.value, homeSync.value);
         });
@@ -2279,11 +2275,8 @@ STATUS_HTML = """<!DOCTYPE html>
     xhr.send();
   }
 
+  homeLoad.addEventListener("click", function () { loadHomeFeed(false); });
   homeRefresh.addEventListener("click", function () { loadHomeFeed(true); });
-
-  document.querySelector('[data-tab="home"]').addEventListener("click", function () {
-    if (!homeLoaded) loadHomeFeed(false);
-  });
 
   // ── Feed tab ──
   var feedChannel  = document.getElementById("feed-channel");
@@ -2322,7 +2315,7 @@ STATUS_HTML = """<!DOCTYPE html>
   var subsList   = document.getElementById("subs-list");
   var allChannels = [];
 
-  // Probe whether subscriptions.json is mounted; show panel if so
+  // Probe whether subscriptions.json is mounted; show subscription + home cards if so
   (function probeSubscriptions() {
     var xhr = new XMLHttpRequest();
     xhr.open("GET", "/subscriptions", true);
@@ -2331,6 +2324,7 @@ STATUS_HTML = """<!DOCTYPE html>
       if (xhr.readyState !== 4) return;
       if (xhr.status !== 503) {
         subsCard.style.display = "block";
+        homeCard.style.display = "block";
       }
     };
     xhr.send();
