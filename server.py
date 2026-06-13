@@ -495,12 +495,11 @@ def _probe_fps(url: str) -> float | None:
 
 def _yt_lang_args() -> list[str]:
     """Extra yt-dlp flags to request content in the configured YT_LANG."""
-    if not YT_LANG:
-        return []
-    return [
-        "--extractor-args", f"youtubetab:lang={YT_LANG}",
-        "--add-header", f"Accept-Language:{YT_LANG},*;q=0.5",
-    ]
+    lang = YT_LANG or "original"
+    args = ["--extractor-args", f"youtubetab:lang={lang}"]
+    if YT_LANG:
+        args += ["--add-header", f"Accept-Language:{YT_LANG},*;q=0.5"]
+    return args
 
 
 def fetch_title(stream: Stream):
@@ -1376,7 +1375,7 @@ STATUS_HTML = """<!DOCTYPE html>
     <p style="font-size:.85rem;color:var(--muted);margin-bottom:12px;">
       Paste any YouTube, Twitch, or X/Twitter video URL — or a YouTube video ID.
     </p>
-    <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;">
+    <div style="display:flex;flex-direction:column;gap:10px;">
       <input id="yt-id" type="text" placeholder="URL or YouTube video ID">
       <div id="yt-quality-btns" style="display:flex;gap:6px;flex-wrap:wrap;"></div>
       <div id="yt-sync-btns" style="display:flex;gap:6px;flex-wrap:wrap;"></div>
@@ -1413,7 +1412,7 @@ STATUS_HTML = """<!DOCTYPE html>
 <div class="tab-panel" id="tab-feed">
   <div class="card">
     <h2>Playback options</h2>
-    <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;">
+    <div style="display:flex;flex-direction:column;gap:10px;">
       <div id="feed-quality-btns" style="display:flex;gap:6px;flex-wrap:wrap;"></div>
       <div id="feed-sync-btns" style="display:flex;gap:6px;flex-wrap:wrap;"></div>
     </div>
@@ -1425,8 +1424,6 @@ STATUS_HTML = """<!DOCTYPE html>
     <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:14px;">
       <button id="home-load" style="background:var(--red);color:white;border:0;border-radius:8px;padding:11px 20px;font-family:'Orbitron',monospace;font-size:.8rem;letter-spacing:.08em;cursor:pointer;">SHOW HOME FEED</button>
       <button id="home-refresh" style="display:none;background:transparent;color:var(--muted);border:1px solid var(--border);border-radius:8px;padding:11px 18px;font-family:'Orbitron',monospace;font-size:.75rem;letter-spacing:.08em;cursor:pointer;">↺ REFRESH</button>
-      <div id="home-quality-btns" style="display:flex;gap:6px;flex-wrap:wrap;"></div>
-      <div id="home-sync-btns" style="display:flex;gap:6px;flex-wrap:wrap;"></div>
     </div>
     <div class="feed-status" id="home-status"></div>
     <div class="feed-grid" id="home-grid"></div>
@@ -1477,23 +1474,23 @@ STATUS_HTML = """<!DOCTYPE html>
 <div class="tab-panel" id="tab-twitch">
   <div class="card">
     <h2>Playback options</h2>
-    <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;">
+    <div style="display:flex;flex-direction:column;gap:10px;">
       <div id="twitch-quality-btns" style="display:flex;gap:6px;flex-wrap:wrap;"></div>
       <div id="twitch-sync-btns" style="display:flex;gap:6px;flex-wrap:wrap;"></div>
     </div>
   </div>
   <div class="card">
     <h2>Live stream</h2>
-    <div class="feed-controls">
-      <input id="twitch-live-channel" type="text" placeholder="channel name (e.g. xqc)">
-      <button id="twitch-live-go">WATCH LIVE</button>
+    <div style="display:flex;flex-direction:column;gap:10px;">
+      <input id="twitch-live-channel" type="text" placeholder="channel name (e.g. xqc)" style="background:var(--input-bg);color:var(--text);border:1px solid var(--border);border-radius:8px;padding:12px 16px;font-family:monospace;font-size:1rem;">
+      <div><button id="twitch-live-go" style="background:var(--red);color:white;border:0;border-radius:8px;padding:12px 20px;font-family:'Orbitron',monospace;letter-spacing:.08em;cursor:pointer;font-size:.8rem;">WATCH LIVE</button></div>
     </div>
   </div>
   <div class="card">
     <h2>VODs</h2>
-    <div class="feed-controls">
-      <input id="twitch-vod-channel" type="text" placeholder="channel name">
-      <button id="twitch-vod-go">LOAD VODS</button>
+    <div style="display:flex;flex-direction:column;gap:10px;margin-bottom:14px;">
+      <input id="twitch-vod-channel" type="text" placeholder="channel name" style="background:var(--input-bg);color:var(--text);border:1px solid var(--border);border-radius:8px;padding:12px 16px;font-family:monospace;font-size:1rem;">
+      <div><button id="twitch-vod-go" style="background:var(--red);color:white;border:0;border-radius:8px;padding:12px 20px;font-family:'Orbitron',monospace;letter-spacing:.08em;cursor:pointer;font-size:.8rem;">LOAD VODS</button></div>
     </div>
     <div class="feed-status" id="twitch-vod-status"></div>
     <div class="feed-grid" id="twitch-vod-grid"></div>
@@ -1507,10 +1504,10 @@ STATUS_HTML = """<!DOCTYPE html>
 <div class="tab-panel" id="tab-pluto">
   <div class="card">
     <h2>Playback options</h2>
-    <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;">
+    <div style="display:flex;flex-direction:column;gap:10px;">
       <div id="pluto-sync-btns" style="display:flex;gap:6px;flex-wrap:wrap;"></div>
       <input id="pluto-filter" type="text" placeholder="Filter channels…"
-             style="flex:1;min-width:180px;background:var(--input-bg);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:8px 12px;font-family:monospace;">
+             style="background:var(--input-bg);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:8px 12px;font-family:monospace;">
     </div>
   </div>
   <div class="card">
@@ -1525,7 +1522,7 @@ STATUS_HTML = """<!DOCTYPE html>
 <div class="tab-panel" id="tab-iptv">
   <div class="card">
     <h2>Playback options</h2>
-    <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;">
+    <div style="display:flex;flex-direction:column;gap:10px;">
       <div id="iptv-quality-btns" style="display:flex;gap:6px;flex-wrap:wrap;"></div>
       <div id="iptv-sync-btns" style="display:flex;gap:6px;flex-wrap:wrap;"></div>
     </div>
@@ -1897,23 +1894,33 @@ STATUS_HTML = """<!DOCTYPE html>
   function renderPluto(channels) {
     plutoList.innerHTML = "";
     var lastCat = null;
+    var currentGroup = null;
     channels.forEach(function (ch) {
       if (ch.category && ch.category !== lastCat) {
         lastCat = ch.category;
         var hdr = document.createElement("div");
         hdr.style.cssText = "font-family:'Orbitron',monospace;font-size:.7rem;" +
-          "letter-spacing:.12em;color:var(--muted);padding:12px 0 4px;" +
-          "text-transform:uppercase;border-top:1px solid var(--border);margin-top:4px;";
+          "letter-spacing:.12em;color:var(--muted);padding:12px 0 6px;" +
+          "text-transform:uppercase;border-top:1px solid var(--border);margin-top:8px;";
         hdr.textContent = ch.category;
         plutoList.appendChild(hdr);
+        currentGroup = document.createElement("div");
+        currentGroup.style.cssText = "display:flex;flex-wrap:wrap;gap:8px;margin-bottom:4px;";
+        plutoList.appendChild(currentGroup);
       }
-      var row = document.createElement("div");
-      row.className = "stream-row";
-      row.style.cursor = "pointer";
-      row.innerHTML =
-        '<span style="font-size:.95rem;">' + escHtml(ch.name) + '</span>' +
-        '<span style="font-family:monospace;font-size:.75rem;color:var(--muted);">LIVE \u2192</span>';
-      row.addEventListener("click", function () {
+      if (!currentGroup) {
+        currentGroup = document.createElement("div");
+        currentGroup.style.cssText = "display:flex;flex-wrap:wrap;gap:8px;margin-bottom:4px;";
+        plutoList.appendChild(currentGroup);
+      }
+      var btn = document.createElement("button");
+      btn.textContent = ch.name;
+      btn.style.cssText = "font-family:monospace;font-size:.85rem;padding:7px 14px;" +
+        "border-radius:6px;border:1px solid var(--border);background:var(--input-bg);" +
+        "color:var(--text);cursor:pointer;white-space:nowrap;";
+      btn.addEventListener("mouseenter", function () { btn.style.borderColor = "var(--red)"; btn.style.color = "var(--red)"; });
+      btn.addEventListener("mouseleave", function () { btn.style.borderColor = "var(--border)"; btn.style.color = "var(--text)"; });
+      btn.addEventListener("click", function () {
         if (ch.id && plutoActiveLang) {
           window.location.href =
             "/pluto_watch?lang=" + encodeURIComponent(plutoActiveLang) +
@@ -1921,10 +1928,9 @@ STATUS_HTML = """<!DOCTYPE html>
             "&sync=" + encodeURIComponent(plutoSync.value);
           return;
         }
-        // Backwards fallback if id is missing.
         window.location.href = buildWatchUrl(ch.url, "", plutoSync.value);
       });
-      plutoList.appendChild(row);
+      currentGroup.appendChild(btn);
     });
   }
 
@@ -2210,25 +2216,7 @@ STATUS_HTML = """<!DOCTYPE html>
   var homeRefresh = document.getElementById("home-refresh");
   var homeLoaded  = false;
 
-  var homeQuality = createButtonGroup("home-quality-btns", [
-    { value: "", label: "AUTO" },
-    { value: "1080", label: "1080p" },
-    { value: "720", label: "720p" },
-    { value: "480", label: "480p" },
-    { value: "360", label: "360p" }
-  ], "");
-
-  var homeSync = createButtonGroup("home-sync-btns", [
-    { value: "0", label: "0s" },
-    { value: "500", label: "0.5s" },
-    { value: "1000", label: "1s" },
-    { value: "1500", label: "1.5s" },
-    { value: "2000", label: "2s" },
-    { value: "2500", label: "2.5s" },
-    { value: "3000", label: "3s" },
-    { value: "3500", label: "3.5s" },
-    { value: "4000", label: "4s" }
-  ], "{{audio_delay_ms}}");
+  // Home feed reuses the feed tab's quality/sync selectors (defined below)
 
   function loadHomeFeed(force) {
     homeStatus.textContent = "Loading… this may take a minute.";
@@ -2268,7 +2256,7 @@ STATUS_HTML = """<!DOCTYPE html>
           '<div style="font-family:monospace;font-size:.75rem;color:var(--muted);white-space:nowrap;">' + (dur ? escHtml(dur) + (dateStr ? " · " : "") : "") + escHtml(dateStr) + '</div>' +
           '</div></div>';
         card.addEventListener("click", function () {
-          window.location.href = buildWatchUrl(v.url, homeQuality.value, homeSync.value);
+          window.location.href = buildWatchUrl(v.url, feedQuality.value, feedSync.value);
         });
         homeGrid.appendChild(card);
       });
