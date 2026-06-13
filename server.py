@@ -2991,6 +2991,11 @@ WATCH_HTML = """<!DOCTYPE html>
   .resume-banner a{color:#f5c518;font-weight:600;cursor:pointer;text-decoration:underline;}
   .resume-banner .dismiss{color:#888;font-size:.8rem;cursor:pointer;text-decoration:underline;background:none;border:none;}
   .stream-title{font-size:.95rem;color:var(--text);font-family:'Rajdhani',sans-serif;font-weight:500;padding:8px 4px 2px;letter-spacing:.02em;min-height:1.4em;}
+  .sync-bar{display:flex;align-items:center;gap:8px;margin-top:8px;flex-wrap:wrap;padding:8px 4px;border-top:1px solid var(--border);}
+  .sync-label{font-family:'Orbitron',monospace;font-size:.65rem;letter-spacing:.1em;color:var(--muted);text-transform:uppercase;}
+  .sync-btn{background:var(--panel);border:1px solid var(--border);color:var(--text);font-family:'Rajdhani',sans-serif;font-size:1rem;font-weight:500;padding:6px 14px;border-radius:6px;cursor:pointer;}
+  .sync-btn:hover{border-color:var(--red);color:var(--red);}
+  .sync-val{font-family:monospace;font-size:.95rem;color:var(--red);min-width:60px;text-align:center;}
 </style>
 </head>
 <body>
@@ -3002,6 +3007,14 @@ WATCH_HTML = """<!DOCTYPE html>
     <img id="mjpeg" alt="Live MJPEG stream">
     <div id="stream-title" class="stream-title"></div>
     <audio id="audio" controls autoplay playsinline></audio>
+    <div class="sync-bar">
+      <span class="sync-label">Audio delay</span>
+      <button class="sync-btn" data-delta="-0.5">−0.5s</button>
+      <button class="sync-btn" data-delta="-0.1">−0.1s</button>
+      <span id="sync-val" class="sync-val">0.0s</span>
+      <button class="sync-btn" data-delta="0.1">+0.1s</button>
+      <button class="sync-btn" data-delta="0.5">+0.5s</button>
+    </div>
     <div class="seek-bar">
       <button class="seek-btn" data-mins="-10">-10 min</button>
       <button class="seek-btn" data-mins="1">+1 min</button>
@@ -3065,6 +3078,45 @@ WATCH_HTML = """<!DOCTYPE html>
   window.addEventListener("click", retryPlay, true);
   window.addEventListener("touchstart", retryPlay, true);
   window.addEventListener("keydown", retryPlay, true);
+
+  // ── Real-time audio delay control ───────────────────────────────────────
+  var syncValEl    = document.getElementById("sync-val");
+  var audioDelayS  = 0;      // cumulative offset applied this session
+  var pauseTimer   = null;
+
+  function applyAudioDelta(deltaS) {
+    clearTimeout(pauseTimer);
+    audioDelayS = Math.round((audioDelayS + deltaS) * 10) / 10;
+    syncValEl.textContent = (audioDelayS >= 0 ? "+" : "") + audioDelayS.toFixed(1) + "s";
+
+    if (deltaS > 0) {
+      // Audio needs to play later → pause it for deltaS seconds
+      audio.pause();
+      pauseTimer = setTimeout(function () {
+        try {
+          var p = audio.play();
+          if (p && typeof p.catch === "function") p.catch(function () {});
+        } catch (e) {}
+      }, Math.round(deltaS * 1000));
+    } else {
+      // Audio needs to play earlier → skip forward by |deltaS| seconds
+      if (audio.currentTime + (-deltaS) < audio.duration || isNaN(audio.duration)) {
+        audio.currentTime = Math.max(0, audio.currentTime + (-deltaS));
+      }
+      if (audio.paused) {
+        try {
+          var p = audio.play();
+          if (p && typeof p.catch === "function") p.catch(function () {});
+        } catch (e) {}
+      }
+    }
+  }
+
+  document.querySelectorAll(".sync-btn").forEach(function (btn) {
+    btn.addEventListener("click", function () {
+      applyAudioDelta(parseFloat(btn.getAttribute("data-delta")));
+    });
+  });
 
   // Always request video immediately; server-side frame buffering applies
   // sync_ms without skipping content from the beginning.
