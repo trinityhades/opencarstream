@@ -999,10 +999,20 @@ def _direct_input_args(url: str) -> list[str]:
 
 def _resolve_mp4_url(url: str, quality: int | None) -> tuple[str, str]:
     """Resolve a direct playable URL for MP4/native mode. Returns (direct_url, error)."""
+    # Local files: serve via the /file_serve endpoint so the browser can load them
     if _is_local_media_url(url):
-        return "", "Local media files are not supported in MP4 mode"
+        local_path = _ffmpeg_input_target(url)
+        return "/file_serve?path=" + quote(local_path, safe=""), ""
+
+    # RTP/UDP/RTSP: no browser support
+    if _is_rtp_stream(url):
+        return "", "RTP/UDP/RTSP streams cannot be played natively in the browser"
+
+    # HLS, IPTV (LAN HTTP), Acestream proxy — browser can load these directly
     if _is_direct_stream(url):
-        return _ffmpeg_input_target(url), ""
+        return url, ""
+
+    # YouTube, Twitch, etc: resolve a direct CDN URL via yt-dlp
     fmt = (
         f"best[ext=mp4][height<={quality}]/best[height<={quality}]/best[ext=mp4]/best"
         if quality
@@ -3939,6 +3949,20 @@ class Handler(BaseHTTPRequestHandler):
             list_name = qs.get("list", [None])[0]
             self._serve_iptv_streams(list_name)
 
+        elif path == "/file_serve":
+            raw_path = qs.get("path", [None])[0]
+            if not raw_path:
+                self._error(400, "Missing ?path= parameter")
+                return
+            req_path = unquote(raw_path)
+            local_file, err = self._resolve_local_media_path(
+                os.path.relpath(req_path, os.path.abspath(LOCAL_MEDIA_DIR))
+            )
+            if not local_file:
+                self._error(400, err)
+                return
+            self._serve_file_bytes(local_file)
+
         elif path == "/local_media":
             raw_dir = qs.get("dir", [None])[0]
             self._serve_local_media(raw_dir)
@@ -4400,6 +4424,52 @@ class Handler(BaseHTTPRequestHandler):
             "stream_count": len(streams),
             "streams": streams,
         })
+
+    def _serve_file_bytes(self, abs_path: str):
+        """Serve a local media file directly over HTTP for native browser playback."""
+        import mimetypes
+        ext = os.path.splitext(abs_path)[1].lower()
+        mime = mimetypes.types_map.get(ext, "video/mp4")
+        try:
+            size = os.path.getsize(abs_path)
+        except OSError as e:
+            self._error(500, str(e))
+            return
+
+        range_header = self.headers.get("Range", "")
+        if range_header.startswith("bytes="):
+            parts = range_header[6:].split("-")
+            start = int(parts[0]) if parts[0] else 0
+            end   = int(parts[1]) if len(parts) > 1 and parts[1] else size - 1
+            end   = min(end, size - 1)
+            length = end - start + 1
+            self.send_response(206)
+            self.send_header("Content-Type", mime)
+            self.send_header("Content-Range", f"bytes {start}-{end}/{size}")
+            self.send_header("Content-Length", str(length))
+            self.send_header("Accept-Ranges", "bytes")
+            self.end_headers()
+            with open(abs_path, "rb") as f:
+                f.seek(start)
+                remaining = length
+                while remaining > 0:
+                    chunk = f.read(min(65536, remaining))
+                    if not chunk:
+                        break
+                    self.wfile.write(chunk)
+                    remaining -= len(chunk)
+        else:
+            self.send_response(200)
+            self.send_header("Content-Type", mime)
+            self.send_header("Content-Length", str(size))
+            self.send_header("Accept-Ranges", "bytes")
+            self.end_headers()
+            with open(abs_path, "rb") as f:
+                while True:
+                    chunk = f.read(65536)
+                    if not chunk:
+                        break
+                    self.wfile.write(chunk)
 
     def _serve_local_media(self, rel_dir: str | None = None):
         base = os.path.abspath(LOCAL_MEDIA_DIR)
