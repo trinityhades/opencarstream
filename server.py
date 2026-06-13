@@ -20,6 +20,7 @@ from collections import deque
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from urllib.parse import urlparse, parse_qs, unquote, quote
+from urllib.request import Request, urlopen
 from socketserver import ThreadingMixIn
 
 logging.basicConfig(
@@ -729,11 +730,14 @@ def _load_home_feed_disk_cache() -> None:
                 data = json.load(f)
             videos = data.get("videos") or []
             if videos and data.get("built_at"):
-                dated   = [v for v in videos if v.get("upload_date")]
-                undated = [v for v in videos if not v.get("upload_date")]
+                ts_dated = [v for v in videos if v.get("published_ts")]
+                ts_dated.sort(key=lambda v: v["published_ts"], reverse=True)
+                remaining = [v for v in videos if not v.get("published_ts")]
+                dated   = [v for v in remaining if v.get("upload_date")]
+                undated = [v for v in remaining if not v.get("upload_date")]
                 dated.sort(key=lambda v: v["upload_date"], reverse=True)
                 undated.sort(key=lambda v: v.get("fetch_idx", 0))
-                videos = dated + undated
+                videos = ts_dated + dated + undated
                 _home_feed_cache["videos"]   = videos
                 _home_feed_cache["built_at"] = float(data["built_at"])
                 log.info(f"Loaded home feed cache from disk: {len(videos)} videos ({len(dated)} dated)")
@@ -751,6 +755,56 @@ def _save_home_feed_disk_cache(videos: list[dict], built_at: float) -> None:
         os.replace(tmp, HOME_FEED_CACHE_FILE)
     except Exception as e:
         log.warning(f"Could not save home feed disk cache: {e}")
+
+
+_CHANNEL_ID_CACHE: dict[str, str] = {}
+_CHANNEL_ID_LOCK = threading.Lock()
+_UC_RE = re.compile(r"UC[A-Za-z0-9_-]{22}")
+_YT_UA = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36"
+
+
+def _resolve_channel_id(channel_url: str) -> str:
+    """Return the UC... channel ID for a YouTube channel URL, or '' on failure. Cached."""
+    if not channel_url:
+        return ""
+    with _CHANNEL_ID_LOCK:
+        if channel_url in _CHANNEL_ID_CACHE:
+            return _CHANNEL_ID_CACHE[channel_url]
+    m = re.search(r"/channel/(UC[A-Za-z0-9_-]{22})", channel_url)
+    cid = m.group(1) if m else ""
+    if not cid:
+        try:
+            req = Request(channel_url, headers={"User-Agent": _YT_UA, "Accept-Language": "en-US,en;q=0.9"})
+            with urlopen(req, timeout=15) as resp:
+                html = resp.read(400_000).decode("utf-8", errors="replace")
+            m = _UC_RE.search(html)
+            cid = m.group(0) if m else ""
+        except Exception:
+            cid = ""
+    with _CHANNEL_ID_LOCK:
+        _CHANNEL_ID_CACHE[channel_url] = cid
+    return cid
+
+
+def _fetch_rss_published(channel_id: str) -> dict[str, str]:
+    """Return {video_id: ISO-8601 published} for a channel via YouTube's Atom feed."""
+    if not channel_id:
+        return {}
+    url = f"https://www.youtube.com/feeds/videos.xml?channel_id={channel_id}"
+    try:
+        req = Request(url, headers={"User-Agent": _YT_UA})
+        with urlopen(req, timeout=15) as resp:
+            xml = resp.read().decode("utf-8", errors="replace")
+    except Exception:
+        return {}
+    out: dict[str, str] = {}
+    # Atom entries are small enough to parse with a regex pair.
+    for entry in re.findall(r"<entry>(.*?)</entry>", xml, flags=re.DOTALL):
+        vid_m = re.search(r"<yt:videoId>([^<]+)</yt:videoId>", entry)
+        pub_m = re.search(r"<published>([^<]+)</published>", entry)
+        if vid_m and pub_m:
+            out[vid_m.group(1).strip()] = pub_m.group(1).strip()
+    return out
 
 
 def _fetch_channel_videos(channel_url: str, channel_name: str, n: int) -> list[dict]:
@@ -803,6 +857,20 @@ def _fetch_channel_videos(channel_url: str, channel_name: str, n: int) -> list[d
             "channel_url": channel_url,
             "fetch_idx":   len(videos),  # position within channel (0 = newest)
         })
+
+    # Enrich with precise publish timestamps from the channel's Atom feed.
+    # This is how we get a reliable cross-channel sort order for the Home feed,
+    # since --flat-playlist almost never returns upload_date for YouTube tabs.
+    if videos:
+        cid = _resolve_channel_id(channel_url)
+        rss = _fetch_rss_published(cid) if cid else {}
+        if rss:
+            for v in videos:
+                ts = rss.get(v["id"])
+                if ts:
+                    v["published_ts"] = ts            # ISO-8601, sortable as string
+                    if not v.get("upload_date"):
+                        v["upload_date"] = ts[:10].replace("-", "")  # YYYYMMDD
     return videos
 
 
@@ -820,8 +888,13 @@ def _build_home_feed(channels: list[dict]) -> list[dict]:
             except Exception:
                 pass
 
-    dated   = [v for v in all_videos if v.get("upload_date")]
-    undated = [v for v in all_videos if not v.get("upload_date")]
+    # Prefer precise RSS publish timestamps when available so videos from
+    # different channels interleave by true recency, like YouTube's home feed.
+    ts_dated = [v for v in all_videos if v.get("published_ts")]
+    ts_dated.sort(key=lambda v: v["published_ts"], reverse=True)
+    remaining = [v for v in all_videos if not v.get("published_ts")]
+    dated   = [v for v in remaining if v.get("upload_date")]
+    undated = [v for v in remaining if not v.get("upload_date")]
     dated.sort(key=lambda v: v["upload_date"], reverse=True)  # newest first
 
     # True round-robin interleave for undated videos: group by channel_url,
@@ -841,7 +914,7 @@ def _build_home_feed(channels: list[dict]) -> list[dict]:
             if i < len(lst):
                 interleaved.append(lst[i])
 
-    return dated + interleaved
+    return ts_dated + dated + interleaved
 
 
 def _scan_iptv_lists() -> tuple[str, list[dict[str, str]], str]:
