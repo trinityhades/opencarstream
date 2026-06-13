@@ -64,11 +64,13 @@ SUBSCRIPTIONS_FILE  = os.environ.get("SUBSCRIPTIONS_FILE", "/config/subscription
 ACE_STREAMS_FILE    = os.environ.get("ACE_STREAMS_FILE", "/config/ace_streams.json")
 FAVORITES_FILE      = os.environ.get("FAVORITES_FILE", "/config/favorites.json")
 # How many recent videos to fetch per channel for the Home feed
-HOME_FEED_PER_CHANNEL = int(os.environ.get("HOME_FEED_PER_CHANNEL", "2"))
+HOME_FEED_PER_CHANNEL = int(os.environ.get("HOME_FEED_PER_CHANNEL", "3"))
 # Max concurrent yt-dlp workers when building the Home feed
 HOME_FEED_WORKERS     = int(os.environ.get("HOME_FEED_WORKERS", "8"))
 # Cache the Home feed for this many seconds (0 = disabled)
 HOME_FEED_CACHE_SECS  = int(os.environ.get("HOME_FEED_CACHE_SECS", str(30 * 60)))
+# Only show videos uploaded within this many days (0 = no filter)
+HOME_FEED_MAX_AGE_DAYS = int(os.environ.get("HOME_FEED_MAX_AGE_DAYS", "7"))
 # Comma-separated list of Pluto TV language codes to load, e.g. "es,en"
 PLUTO_LANGS         = [l.strip() for l in os.environ.get("PLUTO_LANGS", "es,en").split(",") if l.strip()]
 PLUTO_REFRESH_SECS  = int(os.environ.get("PLUTO_REFRESH_SECS", str(60 * 60)))  # 1 h
@@ -2181,8 +2183,8 @@ STATUS_HTML = """<!DOCTYPE html>
       if (data.error) { homeStatus.textContent = "Error: " + data.error; return; }
       var videos = data.videos || [];
       homeGrid.innerHTML = "";
-      if (!videos.length) { homeStatus.textContent = "No videos found."; return; }
-      var cachedNote = data.cached ? " (cached)" : "";
+      if (!videos.length) { homeStatus.textContent = "No recent videos found (all channels quiet in the last 7 days)."; return; }
+      var cachedNote = data.cached ? " · cached" : "";
       var builtDate  = data.built_at ? new Date(data.built_at * 1000).toLocaleTimeString() : "";
       homeStatus.textContent = videos.length + " videos" + cachedNote + (builtDate ? " · updated " + builtDate : "");
       videos.forEach(function (v) {
@@ -3561,7 +3563,14 @@ class Handler(BaseHTTPRequestHandler):
         log.info(f"Building home feed from {len(channels)} channels ({HOME_FEED_WORKERS} workers)…")
         t0 = time.time()
         videos = _build_home_feed(channels)
-        log.info(f"Home feed built: {len(videos)} videos in {time.time()-t0:.1f}s")
+
+        if HOME_FEED_MAX_AGE_DAYS > 0:
+            cutoff = time.strftime("%Y%m%d", time.gmtime(time.time() - HOME_FEED_MAX_AGE_DAYS * 86400))
+            before = len(videos)
+            videos = [v for v in videos if (v.get("upload_date") or "0") >= cutoff]
+            log.info(f"Home feed: {before} raw → {len(videos)} within {HOME_FEED_MAX_AGE_DAYS}d in {time.time()-t0:.1f}s")
+        else:
+            log.info(f"Home feed built: {len(videos)} videos in {time.time()-t0:.1f}s")
 
         with _home_feed_lock:
             _home_feed_cache["videos"]   = videos
