@@ -112,6 +112,7 @@ class Stream:
         self._ff_proc   = None
         self._audio_proc: object | None = None   # separate audio ffmpeg for direct streams
         self.seek_s     : float = 0.0
+        self.fps        : float = float(MJPEG_FPS)
         self.started_at : float | None = None
         self.first_frame_at: float | None = None
         # Audio ring-buffer for direct streams (HLS/MPEG-TS) where a second
@@ -150,6 +151,8 @@ class Stream:
             "error":  self.error,
             "error_detail": self.error_detail,
             "age_s":  round(time.time() - self.created_at),
+            "fps":    self.fps,
+            "seek_s": self.seek_s,
         }
 
 
@@ -465,6 +468,31 @@ pluto_cache = PlutoCache()
 
 
 # ── Pipeline ──────────────────────────────────────────────────────────────────
+def _probe_fps(url: str) -> float | None:
+    """Ask ffprobe for the video stream's frame rate. Returns None on failure."""
+    try:
+        r = subprocess.run(
+            [
+                "ffprobe", "-v", "quiet",
+                "-select_streams", "v:0",
+                "-show_entries", "stream=r_frame_rate",
+                "-of", "default=noprint_wrappers=1:nokey=1",
+                url,
+            ],
+            capture_output=True, text=True, timeout=10,
+        )
+        val = r.stdout.strip().splitlines()[0] if r.returncode == 0 else ""
+        if not val:
+            return None
+        if "/" in val:
+            num, den = val.split("/", 1)
+            den = float(den)
+            return round(float(num) / den, 3) if den else None
+        return float(val)
+    except Exception:
+        return None
+
+
 def _yt_lang_args() -> list[str]:
     """Extra yt-dlp flags to request content in the configured YT_LANG."""
     if not YT_LANG:
@@ -909,7 +937,7 @@ def _start_muxed_pipeline(stream: Stream):
         # Video output (stdout / pipe:1)
         "-map", "0:v:0",
         "-vf", vf,
-        "-fps_mode", "cfr",
+        "-fps_mode", "vfr",
         "-vcodec", "mjpeg",
         "-q:v", str(FFMPEG_QUALITY),
         "-r", str(MJPEG_FPS),
@@ -985,7 +1013,7 @@ def _run_hls_pipeline(stream: Stream):
                     f":force_original_aspect_ratio=decrease,"
                     f"pad={STREAM_WIDTH}:{STREAM_HEIGHT}:(ow-iw)/2:(oh-ih)/2:black"
                 ),
-                "-fps_mode", "cfr",
+                "-fps_mode", "vfr",
                 "-vcodec", "mjpeg",
                 "-q:v", str(FFMPEG_QUALITY),
                 "-r", str(MJPEG_FPS),
@@ -1109,26 +1137,33 @@ def run_pipeline(stream: Stream):
             direct_url = url_r.stdout.strip().splitlines()[0] if url_r.returncode == 0 else ""
 
             if direct_url:
+                # Detect source FPS so we output at the native rate — no frame
+                # duplication/dropping, which is the main cause of A/V drift.
+                source_fps = _probe_fps(direct_url)
+                output_fps = min(source_fps, MJPEG_FPS) if source_fps else MJPEG_FPS
+                stream.fps = output_fps
+                log.info(f"[{stream.id}] source_fps={source_fps} → output_fps={output_fps}")
+
                 seek_args = ["-ss", str(int(stream.seek_s))] if stream.seek_s > 0 else []
                 ff_cmd = [
                     "ffmpeg",
                     "-loglevel", "error",
-                    # Reconnect on brief network drops without restarting the stream
                     "-reconnect", "1",
                     "-reconnect_streamed", "1",
                     "-reconnect_delay_max", "10",
                     *seek_args,
-                    "-re",   # read input at real-time pace — never buffers ahead
+                    "-re",
                     "-i", direct_url,
                     "-vf", (
                         f"scale={STREAM_WIDTH}:{STREAM_HEIGHT}"
                         f":force_original_aspect_ratio=decrease,"
                         f"pad={STREAM_WIDTH}:{STREAM_HEIGHT}:(ow-iw)/2:(oh-ih)/2:black"
                     ),
-                    "-fps_mode", "cfr",
+                    # No -fps_mode cfr: let ffmpeg pass frames at source timing.
+                    # -r caps the output rate without forcing duplication.
                     "-vcodec", "mjpeg",
                     "-q:v", str(FFMPEG_QUALITY),
-                    "-r", str(MJPEG_FPS),
+                    "-r", str(output_fps),
                     "-f", "image2pipe",
                     "-vframes", "99999999",
                     "pipe:1",
@@ -1161,7 +1196,6 @@ def run_pipeline(stream: Stream):
                         f":force_original_aspect_ratio=decrease,"
                         f"pad={STREAM_WIDTH}:{STREAM_HEIGHT}:(ow-iw)/2:(oh-ih)/2:black"
                     ),
-                    "-fps_mode", "cfr",
                     "-vcodec", "mjpeg",
                     "-q:v", str(FFMPEG_QUALITY),
                     "-r", str(MJPEG_FPS),
@@ -3095,6 +3129,29 @@ WATCH_HTML = """<!DOCTYPE html>
     elapsedEl.style.display = "none";
   }
 
+  // ── Frame counter (for drift detection) ─────────────────────────────────
+  var frameCount = 0;
+  var streamFps  = 0;   // fetched from /stream_status once stream is live
+
+  img.addEventListener("load", function () { frameCount++; });
+
+  // Fetch actual fps from server once the stream is streaming
+  (function pollFps() {
+    var xhr = new XMLHttpRequest();
+    xhr.open("GET", "/stream_status?sid=" + encodeURIComponent(sid), true);
+    xhr.timeout = 3000;
+    xhr.onreadystatechange = function () {
+      if (xhr.readyState !== 4) return;
+      try {
+        var d = JSON.parse(xhr.responseText);
+        if (d.fps && d.fps > 0) { streamFps = d.fps; return; }
+      } catch(e) {}
+      // retry until we have fps
+      setTimeout(pollFps, 2000);
+    };
+    xhr.send();
+  })();
+
   // ── Elapsed time display ────────────────────────────────────────────────
   var pageStartMs = Date.now();
 
@@ -3113,6 +3170,59 @@ WATCH_HTML = """<!DOCTYPE html>
     setInterval(function () {
       elapsedEl.textContent = fmtElapsed(currentElapsedS());
     }, 1000);
+  }
+
+  // ── A/V drift detection ──────────────────────────────────────────────────
+  // Video clock  = frames received / detected fps
+  // Audio clock  = audio.currentTime (browser's authoritative playback position)
+  // Drift        = video_clock - audio_clock  (positive = video ahead, negative = audio ahead)
+  // When |drift| exceeds threshold, offer a one-click resync (reload from audio position).
+  var DRIFT_THRESHOLD_S  = 2.5;
+  var DRIFT_CHECK_INTERVAL = 10000;  // ms
+  var driftBanner = null;
+
+  function checkDrift() {
+    if (!streamFps || !videoUrl) return;
+    if (audio.paused || audio.currentTime < 5) return;  // not playing yet
+
+    var videoClockS = baseSeekS + frameCount / streamFps;
+    var audioClockS = baseSeekS + audio.currentTime;
+    var drift = videoClockS - audioClockS;
+
+    if (Math.abs(drift) < DRIFT_THRESHOLD_S) {
+      if (driftBanner) { driftBanner.style.display = "none"; }
+      return;
+    }
+
+    // Build banner once, reuse on repeat checks
+    if (!driftBanner) {
+      driftBanner = document.createElement("div");
+      driftBanner.style.cssText = "margin-top:8px;padding:8px 14px;background:#0d1a0d;" +
+        "border:1px solid #2a5c2a;border-radius:6px;font-size:.85rem;" +
+        "display:flex;align-items:center;gap:12px;flex-wrap:wrap;";
+      document.querySelector(".wrap").appendChild(driftBanner);
+    }
+    var aheadStr = drift > 0 ? "video +" + drift.toFixed(1) + "s ahead" : "audio +" + (-drift).toFixed(1) + "s ahead";
+    driftBanner.innerHTML =
+      '<span style="color:#8bc98b;">⚠ A/V desync: ' + aheadStr + '</span>' +
+      '<a id="drift-fix" style="color:#f5c518;cursor:pointer;text-decoration:underline;font-weight:600;">Resync now</a>' +
+      '<button id="drift-dismiss" style="background:none;border:none;color:#888;font-size:.8rem;cursor:pointer;text-decoration:underline;">ignore</button>';
+    driftBanner.style.display = "flex";
+
+    document.getElementById("drift-fix").addEventListener("click", function () {
+      // Reload from audio's current position — both streams restart in sync
+      var targetS = Math.max(0, Math.round(baseSeekS + audio.currentTime));
+      saveProgress(targetS);
+      window.location.href = buildResumeUrl(targetS);
+    });
+    document.getElementById("drift-dismiss").addEventListener("click", function () {
+      driftBanner.style.display = "none";
+      frameCount = Math.round(audio.currentTime * streamFps);  // reset baseline
+    });
+  }
+
+  if (videoUrl) {
+    setInterval(checkDrift, DRIFT_CHECK_INTERVAL);
   }
 
   // ── Progress save / resume ──────────────────────────────────────────────
