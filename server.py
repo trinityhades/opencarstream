@@ -63,6 +63,7 @@ LOCAL_MEDIA_VIDEO_DELAY_MS = int(
 SUBSCRIPTIONS_FILE  = os.environ.get("SUBSCRIPTIONS_FILE", "/config/subscriptions.json")
 ACE_STREAMS_FILE    = os.environ.get("ACE_STREAMS_FILE", "/config/ace_streams.json")
 FAVORITES_FILE      = os.environ.get("FAVORITES_FILE", "/config/favorites.json")
+PROGRESS_FILE       = os.environ.get("PROGRESS_FILE", "/config/watch_progress.json")
 # How many recent videos to fetch per channel for the Home feed
 HOME_FEED_PER_CHANNEL = int(os.environ.get("HOME_FEED_PER_CHANNEL", "3"))
 # Max concurrent yt-dlp workers when building the Home feed
@@ -660,6 +661,25 @@ def _save_favorites(urls: list[str]) -> None:
     with _favorites_lock:
         with open(FAVORITES_FILE, "w", encoding="utf-8") as f:
             json.dump(urls, f, indent=2)
+
+
+_progress_lock = threading.Lock()
+
+def _load_progress() -> dict:
+    """Return {url: {pos_s, saved_at}} dict."""
+    if not os.path.isfile(PROGRESS_FILE):
+        return {}
+    try:
+        with open(PROGRESS_FILE, encoding="utf-8") as f:
+            return json.load(f)
+    except Exception:
+        return {}
+
+def _save_progress(data: dict) -> None:
+    os.makedirs(os.path.dirname(PROGRESS_FILE) or ".", exist_ok=True)
+    with _progress_lock:
+        with open(PROGRESS_FILE, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=2)
 
 
 # ── Home feed cache ───────────────────────────────────────────────────────────
@@ -2883,6 +2903,10 @@ WATCH_HTML = """<!DOCTYPE html>
   .seek-btn.active{border-color:var(--red);color:var(--red);}
   .seek-pending{font-family:monospace;font-size:.9rem;color:var(--red);min-width:80px;}
   .seek-cancel{background:none;border:none;color:#888;font-size:.8rem;cursor:pointer;text-decoration:underline;padding:0;}
+  .elapsed{font-family:monospace;font-size:1rem;color:var(--text);margin-left:auto;letter-spacing:.05em;}
+  .resume-banner{margin-top:10px;padding:10px 14px;background:#1a1200;border:1px solid #6b4f00;border-radius:6px;font-size:.9rem;display:flex;align-items:center;gap:12px;flex-wrap:wrap;}
+  .resume-banner a{color:#f5c518;font-weight:600;cursor:pointer;text-decoration:underline;}
+  .resume-banner .dismiss{color:#888;font-size:.8rem;cursor:pointer;text-decoration:underline;background:none;border:none;}
 </style>
 </head>
 <body>
@@ -2900,6 +2924,12 @@ WATCH_HTML = """<!DOCTYPE html>
       <button class="seek-btn" data-mins="10">+10 min</button>
       <span id="seek-pending" class="seek-pending"></span>
       <button id="seek-cancel" class="seek-cancel" style="display:none">cancel</button>
+      <span id="elapsed" class="elapsed">0:00:00</span>
+    </div>
+    <div id="resume-banner" class="resume-banner" style="display:none">
+      <span id="resume-text"></span>
+      <a id="resume-yes">Resume</a>
+      <button class="dismiss" id="resume-no">dismiss</button>
     </div>
     <div id="diag" class="diag"></div>
   </div>
@@ -2918,8 +2948,13 @@ WATCH_HTML = """<!DOCTYPE html>
   var img = document.getElementById("mjpeg");
   var audio = document.getElementById("audio");
   var diag = document.getElementById("diag");
-  var seekPending = document.getElementById("seek-pending");
-  var seekCancel = document.getElementById("seek-cancel");
+  var seekPending  = document.getElementById("seek-pending");
+  var seekCancel   = document.getElementById("seek-cancel");
+  var elapsedEl    = document.getElementById("elapsed");
+  var resumeBanner = document.getElementById("resume-banner");
+  var resumeText   = document.getElementById("resume-text");
+  var resumeYes    = document.getElementById("resume-yes");
+  var resumeNo     = document.getElementById("resume-no");
 
   // Start audio first so its pipeline is already running and buffered.
   audio.src = "/audio?sid=" + encodeURIComponent(sid);
@@ -3046,7 +3081,109 @@ WATCH_HTML = """<!DOCTYPE html>
   } else {
     // Seek not available (e.g. direct stream)
     document.querySelector(".seek-bar").style.display = "none";
+    elapsedEl.style.display = "none";
   }
+
+  // ── Elapsed time display ────────────────────────────────────────────────
+  var pageStartMs = Date.now();
+
+  function currentElapsedS() {
+    return baseSeekS + Math.floor((Date.now() - pageStartMs) / 1000);
+  }
+
+  function fmtElapsed(s) {
+    var h = Math.floor(s / 3600);
+    var m = Math.floor((s % 3600) / 60);
+    var sec = s % 60;
+    return h + ":" + (m < 10 ? "0" : "") + m + ":" + (sec < 10 ? "0" : "") + sec;
+  }
+
+  if (videoUrl || localFile) {
+    setInterval(function () {
+      elapsedEl.textContent = fmtElapsed(currentElapsedS());
+    }, 1000);
+  }
+
+  // ── Progress save / resume ──────────────────────────────────────────────
+  var progressKey = videoUrl || localFile;
+
+  function buildResumeUrl(posS) {
+    if (localFile) {
+      var u = "/local_watch?file=" + encodeURIComponent(localFile) + "&seek=" + posS;
+      if (syncMs && syncMs !== "0") u += "&sync=" + encodeURIComponent(syncMs);
+      return u;
+    }
+    var u = "/watch?url=" + encodeURIComponent(videoUrl) + "&seek=" + posS;
+    if (videoQuality) u += "&quality=" + encodeURIComponent(videoQuality);
+    if (syncMs && syncMs !== "0") u += "&sync=" + encodeURIComponent(syncMs);
+    return u;
+  }
+
+  function saveProgress(posS) {
+    if (!progressKey || posS < 10) return;
+    var xhr = new XMLHttpRequest();
+    xhr.open("POST", "/progress", true);
+    xhr.setRequestHeader("Content-Type", "application/json");
+    xhr.send(JSON.stringify({url: progressKey, pos_s: posS}));
+  }
+
+  function clearProgress() {
+    if (!progressKey) return;
+    var xhr = new XMLHttpRequest();
+    xhr.open("DELETE", "/progress?url=" + encodeURIComponent(progressKey), true);
+    xhr.send();
+  }
+
+  // Save every 30 seconds
+  if (progressKey) {
+    setInterval(function () { saveProgress(currentElapsedS()); }, 30000);
+  }
+
+  // Check for saved position on load — offer resume if > 60s into the video
+  // and we're not already starting from a seek position
+  if (progressKey && baseSeekS === 0) {
+    var chkXhr = new XMLHttpRequest();
+    chkXhr.open("GET", "/progress?url=" + encodeURIComponent(progressKey), true);
+    chkXhr.timeout = 3000;
+    chkXhr.onreadystatechange = function () {
+      if (chkXhr.readyState !== 4) return;
+      try {
+        var saved = JSON.parse(chkXhr.responseText);
+        var posS = saved.pos_s || 0;
+        var savedAt = saved.saved_at || 0;
+        var ageH = (Date.now() / 1000 - savedAt) / 3600;
+        // Only offer resume if position is > 1 min and saved within 48 h
+        if (posS > 60 && ageH < 48) {
+          resumeText.textContent = "Resume from " + fmtElapsed(posS) + "?";
+          resumeYes.href = buildResumeUrl(posS);
+          resumeYes.addEventListener("click", function () { clearProgress(); });
+          resumeBanner.style.display = "flex";
+        }
+      } catch(e) {}
+    };
+    chkXhr.send();
+  }
+
+  resumeNo.addEventListener("click", function () {
+    resumeBanner.style.display = "none";
+  });
+
+  // On stream error, add position hint to the diagnostics message
+  var origError = img.onerror;
+  img.addEventListener("error", function () {
+    var posS = currentElapsedS();
+    if (posS > 10) {
+      saveProgress(posS);
+      // Append resume link below the existing diag after a short delay
+      // (let the existing error handler run first)
+      setTimeout(function () {
+        if (diag.style.display !== "none" && progressKey) {
+          diag.textContent += "\\n\\nLast saved position: " + fmtElapsed(posS) +
+            "\\nReload from here: " + window.location.origin + buildResumeUrl(posS);
+        }
+      }, 500);
+    }
+  });
 })();
 </script>
 </body></html>"""
@@ -3429,6 +3566,14 @@ class Handler(BaseHTTPRequestHandler):
         elif path == "/favorites":
             self._json({"favorites": _load_favorites()})
 
+        elif path == "/progress":
+            url = (qs.get("url", [None])[0] or "").strip()
+            data = _load_progress()
+            if url:
+                self._json(data.get(url) or {})
+            else:
+                self._json(data)
+
         elif path == "/subscriptions_feed":
             force = qs.get("force", [None])[0] == "1"
             self._serve_subscriptions_feed(force)
@@ -3476,6 +3621,24 @@ class Handler(BaseHTTPRequestHandler):
                 _save_favorites(favs)
             self._json({"ok": True, "favorites": favs})
 
+        elif path == "/progress":
+            length = int(self.headers.get("Content-Length", 0))
+            body   = self.rfile.read(length)
+            try:
+                item = json.loads(body)
+            except Exception:
+                self._error(400, "Invalid JSON")
+                return
+            url   = (item.get("url") or "").strip()
+            pos_s = item.get("pos_s")
+            if not url or pos_s is None:
+                self._error(400, "Missing url or pos_s")
+                return
+            data = _load_progress()
+            data[url] = {"pos_s": int(pos_s), "saved_at": int(time.time())}
+            _save_progress(data)
+            self._json({"ok": True})
+
         else:
             self._error(404, "Not found")
 
@@ -3509,6 +3672,17 @@ class Handler(BaseHTTPRequestHandler):
             favs = [f for f in favs if f != url]
             _save_favorites(favs)
             self._json({"ok": True, "favorites": favs})
+
+        elif path == "/progress":
+            qs  = parse_qs(parsed.query)
+            url = (qs.get("url", [None])[0] or "").strip()
+            if not url:
+                self._error(400, "Missing ?url= parameter")
+                return
+            data = _load_progress()
+            data.pop(url, None)
+            _save_progress(data)
+            self._json({"ok": True})
 
         else:
             self._error(404, "Not found")
