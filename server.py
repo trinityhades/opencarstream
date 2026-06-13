@@ -1478,8 +1478,11 @@ STATUS_HTML = """<!DOCTYPE html>
   .feed-controls button{background:var(--red);color:white;border:0;border-radius:8px;padding:12px 20px;font-family:'Orbitron',monospace;letter-spacing:.08em;cursor:pointer;white-space:nowrap;font-size:.8rem;}
   .feed-status{color:var(--muted);font-size:.9rem;font-style:italic;margin-bottom:12px;min-height:1.4em;}
   .feed-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:18px;}
-  .feed-card{background:var(--input-bg);border:1px solid var(--border);border-radius:10px;overflow:hidden;cursor:pointer;transition:border-color .15s;}
+  .feed-card{background:var(--input-bg);border:1px solid var(--border);border-radius:10px;overflow:hidden;cursor:pointer;transition:border-color .15s;position:relative;}
   .feed-card:hover{border-color:var(--red);}
+  .feed-card-dismiss{position:absolute;top:6px;right:6px;width:22px;height:22px;background:rgba(0,0,0,.65);border:none;border-radius:50%;color:#fff;font-size:13px;line-height:22px;text-align:center;cursor:pointer;z-index:10;display:none;padding:0;}
+  .feed-card:hover .feed-card-dismiss{display:block;}
+  .feed-card-dismiss:hover{background:var(--red);}
   .feed-thumb{width:100%;aspect-ratio:16/9;object-fit:cover;background:var(--thumb-bg);display:block;}
   .feed-info{padding:10px 13px;}
   .feed-title{font-size:.9rem;line-height:1.35;color:var(--text);margin-bottom:5px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;}
@@ -2361,6 +2364,7 @@ STATUS_HTML = """<!DOCTYPE html>
       dateStr = v.upload_date.slice(0,4) + "-" + v.upload_date.slice(4,6) + "-" + v.upload_date.slice(6,8);
     }
     card.innerHTML =
+      '<button class="feed-card-dismiss" title="Dismiss">✕</button>' +
       '<img class="feed-thumb" src="' + (v.thumb || "") + '" loading="lazy" alt="">' +
       '<div class="feed-info">' +
       '<div class="feed-title">' + escHtml(v.title) + '</div>' +
@@ -2371,6 +2375,10 @@ STATUS_HTML = """<!DOCTYPE html>
         (dur ? escHtml(dur) : '') +
       '</div>' +
       '</div></div>';
+    card.querySelector(".feed-card-dismiss").addEventListener("click", function (e) {
+      e.stopPropagation();
+      card.remove();
+    });
     card.addEventListener("click", function () {
       window.location.href = buildWatchUrl(v.url, feedQuality.value, feedSync.value);
     });
