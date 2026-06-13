@@ -125,6 +125,7 @@ class Stream:
         self._audio_ready  = threading.Event()
         self._audio_done   = False
         self._frame_history = deque(maxlen=max(MJPEG_FPS * 12, 120))
+        self.frame_cond     = threading.Condition(self.lock)  # notified whenever a new frame arrives
 
     def stop(self):
         for proc in [self._ff_proc, self._yt_proc, self._audio_proc]:
@@ -140,6 +141,8 @@ class Stream:
         with self._audio_lock:
             self._audio_done = True
         self._audio_ready.set()
+        with self.frame_cond:
+            self.frame_cond.notify_all()
         with self.lock:
             self._frame_history.clear()
 
@@ -1185,12 +1188,13 @@ def _run_hls_pipeline(stream: Stream):
                     break
                 frame = buf[start:end + 2]
                 buf = buf[end + 2:]
-                with stream.lock:
+                with stream.frame_cond:
                     stream.frame = frame
                     stream._frame_history.append((time.time(), frame))
                     stream.last_used = time.time()
                     if stream.first_frame_at is None:
                         stream.first_frame_at = time.time()
+                    stream.frame_cond.notify_all()
 
         ff_rc = ff_proc.poll()
         produced = stream.frame is not None
@@ -1387,12 +1391,13 @@ def run_pipeline(stream: Stream):
                         break
                     frame = buf[start:end + 2]
                     buf = buf[end + 2:]
-                    with stream.lock:
+                    with stream.frame_cond:
                         stream.frame = frame
                         stream._frame_history.append((time.time(), frame))
                         stream.last_used = time.time()
                         if stream.first_frame_at is None:
                             stream.first_frame_at = time.time()
+                        stream.frame_cond.notify_all()
 
             yt_rc = yt_proc.poll() if yt_proc is not None else None
             ff_rc = ff_proc.poll()
@@ -3547,6 +3552,8 @@ def render_watch_page(stream_id: str, sync_ms: int, video_url: str = "", quality
 
 # ── HTTP handler ──────────────────────────────────────────────────────────────
 class Handler(BaseHTTPRequestHandler):
+    disable_nagle_algorithm = True  # TCP_NODELAY — eliminates inter-frame buffering delay
+
     def log_message(self, fmt, *args):
         log.debug(fmt % args)
 
@@ -4312,24 +4319,25 @@ class Handler(BaseHTTPRequestHandler):
 
         # Wait up to 20s for first frame
         deadline = time.time() + 20
-        while stream.frame is None and stream.status not in ("error", "done"):
-            if time.time() > deadline:
-                self._error(504, "Timed out waiting for first frame")
-                return
-            time.sleep(0.1)
+        with stream.frame_cond:
+            while stream.frame is None and stream.status not in ("error", "done"):
+                if time.time() > deadline:
+                    self._error(504, "Timed out waiting for first frame")
+                    return
+                stream.frame_cond.wait(timeout=0.5)
         if delay_s > 0:
             # Let delayed playback have enough buffered frames so the first
             # shown frame starts near content time 0.
-            while stream.status not in ("error", "done"):
-                with stream.lock:
+            with stream.frame_cond:
+                while stream.status not in ("error", "done"):
                     if stream._frame_history:
                         oldest_ts = stream._frame_history[0][0]
                         newest_ts = stream._frame_history[-1][0]
                         if newest_ts - oldest_ts >= delay_s:
                             break
-                if time.time() > deadline:
-                    break
-                time.sleep(0.05)
+                    if time.time() > deadline:
+                        break
+                    stream.frame_cond.wait(timeout=0.5)
 
         if stream.status == "error":
             detail = f" ({stream.error_detail})" if stream.error_detail else ""
@@ -4349,14 +4357,13 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
 
         log.info(f"[{stream.id}] Client connected: {self.client_address[0]}")
-        frame_interval = 1.0 / MJPEG_FPS
         last_frame = None
 
         try:
             while True:
-                t0 = time.monotonic()
-
-                with stream.lock:
+                # Wait for FFmpeg to produce a new frame (wakes all clients immediately).
+                with stream.frame_cond:
+                    stream.frame_cond.wait(timeout=5.0)
                     if delay_s <= 0:
                         frame = stream.frame
                     else:
@@ -4366,6 +4373,7 @@ class Handler(BaseHTTPRequestHandler):
                             if ts <= cutoff:
                                 frame = candidate
                                 break
+                    status = stream.status
 
                 if frame and frame is not last_frame:
                     last_frame = frame
@@ -4375,12 +4383,9 @@ class Handler(BaseHTTPRequestHandler):
                         b"Content-Length: " + str(len(frame)).encode() + b"\r\n\r\n"
                     )
                     self.wfile.write(boundary + frame + b"\r\n")
-                    self.wfile.flush()
-                elif stream.status in ("error", "done"):
-                    break
 
-                elapsed = time.monotonic() - t0
-                time.sleep(max(0.0, frame_interval - elapsed))
+                if status in ("error", "done"):
+                    break
 
         except (BrokenPipeError, ConnectionResetError):
             log.info(f"[{stream.id}] Client disconnected: {self.client_address[0]}")
