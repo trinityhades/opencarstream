@@ -729,10 +729,10 @@ def _load_home_feed_disk_cache() -> None:
                 data = json.load(f)
             videos = data.get("videos") or []
             if videos and data.get("built_at"):
-                # Sort newest-first so even old caches are served correctly
                 dated   = [v for v in videos if v.get("upload_date")]
                 undated = [v for v in videos if not v.get("upload_date")]
                 dated.sort(key=lambda v: v["upload_date"], reverse=True)
+                undated.sort(key=lambda v: v.get("fetch_idx", 0))
                 videos = dated + undated
                 _home_feed_cache["videos"]   = videos
                 _home_feed_cache["built_at"] = float(data["built_at"])
@@ -823,7 +823,25 @@ def _build_home_feed(channels: list[dict]) -> list[dict]:
     dated   = [v for v in all_videos if v.get("upload_date")]
     undated = [v for v in all_videos if not v.get("upload_date")]
     dated.sort(key=lambda v: v["upload_date"], reverse=True)  # newest first
-    return dated + undated
+
+    # True round-robin interleave for undated videos: group by channel_url,
+    # sort each group by fetch_idx (0=newest), then zip across channels so
+    # position 0 is newest from every channel before showing position 1, etc.
+    by_channel: dict[str, list] = {}
+    for v in undated:
+        key = v.get("channel_url") or v.get("channel") or ""
+        by_channel.setdefault(key, []).append(v)
+    for lst in by_channel.values():
+        lst.sort(key=lambda v: v.get("fetch_idx", 0))
+    interleaved: list[dict] = []
+    channels_lists = list(by_channel.values())
+    max_len = max((len(l) for l in channels_lists), default=0)
+    for i in range(max_len):
+        for lst in channels_lists:
+            if i < len(lst):
+                interleaved.append(lst[i])
+
+    return dated + interleaved
 
 
 def _scan_iptv_lists() -> tuple[str, list[dict[str, str]], str]:
@@ -3014,8 +3032,10 @@ WATCH_HTML = """<!DOCTYPE html>
       <span id="sync-val" class="sync-val">0.0s</span>
       <button class="sync-btn" data-delta="0.1">+0.1s</button>
       <button class="sync-btn" data-delta="0.5">+0.5s</button>
+      <span id="drift-live" style="font-family:monospace;font-size:.78rem;color:var(--muted);margin-left:8px;"></span>
     </div>
     <div class="seek-bar">
+      <span class="sync-label" style="margin-right:4px;">Video</span>
       <button class="seek-btn" data-mins="-10">-10 min</button>
       <button class="seek-btn" data-mins="1">+1 min</button>
       <button class="seek-btn" data-mins="5">+5 min</button>
@@ -3080,35 +3100,38 @@ WATCH_HTML = """<!DOCTYPE html>
   window.addEventListener("keydown", retryPlay, true);
 
   // ── Real-time audio delay control ───────────────────────────────────────
-  var syncValEl    = document.getElementById("sync-val");
-  var audioDelayS  = 0;      // cumulative offset applied this session
-  var pauseTimer   = null;
+  var syncValEl   = document.getElementById("sync-val");
+  var driftLiveEl = document.getElementById("drift-live");
+  // Start display at the server-configured initial delay
+  var audioDelayS = parseFloat(syncMs) / 1000 || 0;
+  var pauseTimer  = null;
+
+  function updateSyncDisplay() {
+    syncValEl.textContent = (audioDelayS >= 0 ? "+" : "") + audioDelayS.toFixed(1) + "s";
+  }
+  updateSyncDisplay();
+
+  function resumeAudio() {
+    if (audio.paused) {
+      try { var p = audio.play(); if (p && p.catch) p.catch(function(){}); } catch(e) {}
+    }
+  }
 
   function applyAudioDelta(deltaS) {
     clearTimeout(pauseTimer);
     audioDelayS = Math.round((audioDelayS + deltaS) * 10) / 10;
-    syncValEl.textContent = (audioDelayS >= 0 ? "+" : "") + audioDelayS.toFixed(1) + "s";
-
+    updateSyncDisplay();
+    var isLive = !isFinite(audio.duration);
     if (deltaS > 0) {
-      // Audio needs to play later → pause it for deltaS seconds
+      // Audio plays later → pause for deltaS then resume
       audio.pause();
-      pauseTimer = setTimeout(function () {
-        try {
-          var p = audio.play();
-          if (p && typeof p.catch === "function") p.catch(function () {});
-        } catch (e) {}
-      }, Math.round(deltaS * 1000));
+      pauseTimer = setTimeout(resumeAudio, Math.round(deltaS * 1000));
     } else {
-      // Audio needs to play earlier → skip forward by |deltaS| seconds
-      if (audio.currentTime + (-deltaS) < audio.duration || isNaN(audio.duration)) {
+      // Audio plays earlier → skip forward (VOD only; live can't seek)
+      if (!isLive) {
         audio.currentTime = Math.max(0, audio.currentTime + (-deltaS));
       }
-      if (audio.paused) {
-        try {
-          var p = audio.play();
-          if (p && typeof p.catch === "function") p.catch(function () {});
-        } catch (e) {}
-      }
+      resumeAudio();
     }
   }
 
@@ -3268,58 +3291,94 @@ WATCH_HTML = """<!DOCTYPE html>
     }, 1000);
   }
 
-  // ── A/V drift detection ──────────────────────────────────────────────────
-  // Video clock  = frames received / detected fps
-  // Audio clock  = audio.currentTime (browser's authoritative playback position)
-  // Drift        = video_clock - audio_clock  (positive = video ahead, negative = audio ahead)
-  // When |drift| exceeds threshold, offer a one-click resync (reload from audio position).
-  var DRIFT_THRESHOLD_S  = 2.5;
-  var DRIFT_CHECK_INTERVAL = 10000;  // ms
-  var driftBanner = null;
+  // ── A/V drift detection + auto-correction ───────────────────────────────
+  // Video clock = frames received / streamFps (relative to stream start)
+  // Audio clock = audio.currentTime (browser's precise playback clock)
+  // Drift = video_clock - audio_clock (+ means video ahead / audio behind)
+  //
+  // Tiers:
+  //   |drift| < 0.15s  → ignore (within tolerance)
+  //   0.15–0.8s        → auto-correct silently (nudge audio.currentTime on VOD,
+  //                       or pause/resume on live)
+  //   0.8–3.0s         → auto-correct + show indicator
+  //   > 3.0s           → offer full reload resync
+  var AUTO_CORRECT_LO  = 0.15;
+  var AUTO_CORRECT_HI  = 0.8;
+  var RELOAD_THRESHOLD = 3.0;
+  var DRIFT_INTERVAL   = 5000;  // check every 5s
+  var driftBanner      = null;
+  var autoCorrectCount = 0;
 
   function checkDrift() {
-    if (!streamFps || !videoUrl) return;
-    if (audio.paused || audio.currentTime < 5) return;  // not playing yet
+    if (!streamFps || audio.currentTime < 5) return;
+    var isLive = !isFinite(audio.duration);
+    var videoClockS = frameCount / streamFps;
+    var audioClockS = audio.currentTime;
+    var drift = videoClockS - audioClockS;  // + = video ahead, audio late
+    var absDrift = Math.abs(drift);
 
-    var videoClockS = baseSeekS + frameCount / streamFps;
-    var audioClockS = baseSeekS + audio.currentTime;
-    var drift = videoClockS - audioClockS;
+    // Update live drift display
+    if (driftLiveEl) {
+      driftLiveEl.textContent = absDrift < 0.05 ? "" :
+        "drift:" + (drift >= 0 ? "+" : "") + drift.toFixed(2) + "s";
+      driftLiveEl.style.color = absDrift < AUTO_CORRECT_HI ? "var(--muted)" : "#f5c518";
+    }
 
-    if (Math.abs(drift) < DRIFT_THRESHOLD_S) {
-      if (driftBanner) { driftBanner.style.display = "none"; }
+    if (absDrift < AUTO_CORRECT_LO) {
+      if (driftBanner) driftBanner.style.display = "none";
       return;
     }
 
-    // Build banner once, reuse on repeat checks
-    if (!driftBanner) {
-      driftBanner = document.createElement("div");
-      driftBanner.style.cssText = "margin-top:8px;padding:8px 14px;background:#0d1a0d;" +
-        "border:1px solid #2a5c2a;border-radius:6px;font-size:.85rem;" +
-        "display:flex;align-items:center;gap:12px;flex-wrap:wrap;";
-      document.querySelector(".wrap").appendChild(driftBanner);
+    if (absDrift > RELOAD_THRESHOLD && videoUrl) {
+      // Large drift — offer reload resync
+      if (!driftBanner) {
+        driftBanner = document.createElement("div");
+        driftBanner.style.cssText = "margin-top:8px;padding:8px 14px;background:#0d1a0d;" +
+          "border:1px solid #2a5c2a;border-radius:6px;font-size:.85rem;" +
+          "display:flex;align-items:center;gap:12px;flex-wrap:wrap;";
+        document.querySelector(".wrap").appendChild(driftBanner);
+      }
+      var aheadStr = drift > 0 ? "video +" + drift.toFixed(1) + "s ahead"
+                                : "audio +" + (-drift).toFixed(1) + "s ahead";
+      driftBanner.innerHTML =
+        '<span style="color:#f5c518;">⚠ ' + aheadStr + '</span>' +
+        '<a id="drift-fix" style="color:#f5c518;cursor:pointer;text-decoration:underline;font-weight:600;">Resync</a>' +
+        '<button id="drift-dismiss" style="background:none;border:none;color:#888;font-size:.8rem;cursor:pointer;text-decoration:underline;">ignore</button>';
+      driftBanner.style.display = "flex";
+      document.getElementById("drift-fix").addEventListener("click", function () {
+        var targetS = Math.max(0, Math.round(baseSeekS + audio.currentTime));
+        saveProgress(targetS);
+        window.location.href = buildResumeUrl(targetS);
+      });
+      document.getElementById("drift-dismiss").addEventListener("click", function () {
+        driftBanner.style.display = "none";
+        frameCount = Math.round(audio.currentTime * streamFps);
+      });
+      return;
     }
-    var aheadStr = drift > 0 ? "video +" + drift.toFixed(1) + "s ahead" : "audio +" + (-drift).toFixed(1) + "s ahead";
-    driftBanner.innerHTML =
-      '<span style="color:#8bc98b;">⚠ A/V desync: ' + aheadStr + '</span>' +
-      '<a id="drift-fix" style="color:#f5c518;cursor:pointer;text-decoration:underline;font-weight:600;">Resync now</a>' +
-      '<button id="drift-dismiss" style="background:none;border:none;color:#888;font-size:.8rem;cursor:pointer;text-decoration:underline;">ignore</button>';
-    driftBanner.style.display = "flex";
 
-    document.getElementById("drift-fix").addEventListener("click", function () {
-      // Reload from audio's current position — both streams restart in sync
-      var targetS = Math.max(0, Math.round(baseSeekS + audio.currentTime));
-      saveProgress(targetS);
-      window.location.href = buildResumeUrl(targetS);
-    });
-    document.getElementById("drift-dismiss").addEventListener("click", function () {
-      driftBanner.style.display = "none";
-      frameCount = Math.round(audio.currentTime * streamFps);  // reset baseline
-    });
+    // Auto-correct small/medium drift
+    if (driftBanner) driftBanner.style.display = "none";
+    // Correct 70% of drift to avoid oscillation
+    var correction = drift * 0.7;
+    autoCorrectCount++;
+    if (drift > 0) {
+      // Video ahead → audio is late → skip audio forward
+      if (!isLive) {
+        audio.currentTime = Math.max(0, audio.currentTime + correction);
+      } else {
+        // Live: can't seek; pause briefly
+        audio.pause();
+        setTimeout(resumeAudio, Math.round(correction * 1000));
+      }
+    } else {
+      // Audio ahead → pause audio briefly to let video catch up
+      audio.pause();
+      setTimeout(resumeAudio, Math.round((-correction) * 1000));
+    }
   }
 
-  if (videoUrl) {
-    setInterval(checkDrift, DRIFT_CHECK_INTERVAL);
-  }
+  setInterval(checkDrift, DRIFT_INTERVAL);
 
   // ── Progress save / resume ──────────────────────────────────────────────
   var progressKey = videoUrl || localFile;
