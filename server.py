@@ -1784,6 +1784,17 @@ STATUS_HTML = """<!DOCTYPE html>
 <p id="weather-text" style="margin-top:10px;color:var(--muted);font-size:.85rem;text-align:center;"></p>
 
 <script>
+  function stopStream(sid) {
+    var xhr = new XMLHttpRequest();
+    xhr.open("GET", "/stop_stream?sid=" + encodeURIComponent(sid), true);
+    xhr.onreadystatechange = function () {
+      if (xhr.readyState !== 4) return;
+      window.location.reload();
+    };
+    xhr.send();
+  }
+</script>
+<script>
 (function () {
   // ── Tab switching ──
   var tabBtns = document.querySelectorAll(".tab-btn");
@@ -3123,7 +3134,6 @@ WATCH_HTML = """<!DOCTYPE html>
       <span id="sync-val" class="sync-val">0.0s</span>
       <button class="sync-btn" data-delta="0.1">+0.1s</button>
       <button class="sync-btn" data-delta="0.5">+0.5s</button>
-      <span id="drift-live" style="font-family:monospace;font-size:.78rem;color:var(--muted);margin-left:8px;"></span>
     </div>
     <div class="seek-bar">
       <span class="sync-label" style="margin-right:4px;">Video</span>
@@ -3201,7 +3211,6 @@ WATCH_HTML = """<!DOCTYPE html>
 
   // ── Real-time audio delay control ───────────────────────────────────────
   var syncValEl   = document.getElementById("sync-val");
-  var driftLiveEl = document.getElementById("drift-live");
   // Start display at the server-configured initial delay
   var audioDelayS = parseFloat(syncMs) / 1000 || 0;
   var pauseTimer  = null;
@@ -3357,13 +3366,7 @@ WATCH_HTML = """<!DOCTYPE html>
     elapsedEl.style.display = "none";
   }
 
-  // ── Frame counter (for drift detection) ─────────────────────────────────
-  var frameCount = 0;
-  var streamFps  = 0;   // fetched from /stream_status once stream is live
-
-  img.addEventListener("load", function () { frameCount++; });
-
-  // Fetch actual fps + title from server once the stream is live
+  // Fetch fps + title from server once the stream is live
   var titleEl = document.getElementById("stream-title");
   (function pollStatus() {
     var xhr = new XMLHttpRequest();
@@ -3373,10 +3376,8 @@ WATCH_HTML = """<!DOCTYPE html>
       if (xhr.readyState !== 4) return;
       try {
         var d = JSON.parse(xhr.responseText);
-        if (d.fps && d.fps > 0) streamFps = d.fps;
         if (d.title && titleEl.textContent !== d.title) titleEl.textContent = d.title;
-        // Keep polling until we have both fps and title
-        if (!streamFps || !d.title) setTimeout(pollStatus, 2000);
+        if (!d.title) setTimeout(pollStatus, 2000);
       } catch(e) {
         setTimeout(pollStatus, 2000);
       }
@@ -3403,20 +3404,6 @@ WATCH_HTML = """<!DOCTYPE html>
       elapsedEl.textContent = fmtElapsed(currentElapsedS());
     }, 1000);
   }
-
-  // ── Live drift display (read-only, no auto-correction) ──────────────────
-  // Video clock = frames received / streamFps
-  // Audio clock = audio.currentTime
-  // Drift = video - audio  (+ = video ahead / audio behind)
-  setInterval(function () {
-    if (!streamFps || audio.currentTime < 2) return;
-    var drift = frameCount / streamFps - audio.currentTime;
-    var abs = Math.abs(drift);
-    if (!driftLiveEl) return;
-    driftLiveEl.textContent = abs < 0.05 ? "" :
-      "drift:" + (drift >= 0 ? "+" : "") + drift.toFixed(2) + "s";
-    driftLiveEl.style.color = abs < 0.5 ? "var(--muted)" : "#f5c518";
-  }, 2000);
 
   // ── Progress save / resume ──────────────────────────────────────────────
   var progressKey = videoUrl || localFile;
@@ -3519,7 +3506,12 @@ def render_status_page() -> str:
             rows.append(
                 f'<div class="stream-row">'
                 f'<div><a href="{stream_url}">{title}{quality_tag}</a></div>'
+                f'<div style="display:flex;align-items:center;gap:10px;">'
                 f'<span class="badge {s.status}">{s.status.upper()}</span>'
+                f'<button onclick="stopStream(\'{s.id}\')" title="Stop stream" '
+                f'style="background:none;border:none;color:var(--muted);font-size:1.1rem;cursor:pointer;padding:0;line-height:1;" '
+                f'onmouseover="this.style.color=\'var(--red)\'" onmouseout="this.style.color=\'var(--muted)\'">✕</button>'
+                f'</div>'
                 f'</div>'
             )
         streams_html = "\n".join(rows)
@@ -3780,6 +3772,17 @@ class Handler(BaseHTTPRequestHandler):
                 if ch:
                     stream.title = ch["name"]
             self._html(render_watch_page(stream.id, sync_ms))
+
+        elif path == "/stop_stream":
+            sid = qs.get("sid", [None])[0]
+            if not sid:
+                self._error(400, "Missing ?sid= parameter")
+                return
+            stream = registry.get(sid)
+            if stream:
+                stream.stop()
+                stream.status = "done"
+            self._json({"ok": True})
 
         elif path == "/stream_status":
             sid = qs.get("sid", [None])[0]
