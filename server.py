@@ -499,9 +499,13 @@ def _yt_lang_args() -> list[str]:
     """Extra yt-dlp flags to request content in the configured YT_LANG."""
     if not YT_LANG:
         return []
+    # Pass lang to both extractors: youtubetab (channel/playlist pages) and
+    # youtube (individual video pages / search). This sets hl= in InnerTube
+    # requests so YouTube returns translated titles when available.
     return [
+        "--extractor-args", f"youtube:lang={YT_LANG}",
         "--extractor-args", f"youtubetab:lang={YT_LANG}",
-        "--add-header", f"Accept-Language:{YT_LANG},*;q=0.5",
+        "--add-header", f"Accept-Language:{YT_LANG}-{YT_LANG.upper()},{YT_LANG};q=0.9,*;q=0.5",
     ]
 
 
@@ -965,9 +969,9 @@ def _start_muxed_pipeline(stream: Stream):
         # Video output (stdout / pipe:1)
         "-map", "0:v:0",
         "-vf", vf,
+        "-fps_mode", "vfr",
         "-vcodec", "mjpeg",
         "-q:v", str(FFMPEG_QUALITY),
-        "-r", str(MJPEG_FPS),
         "-f", "image2pipe",
         "-vframes", "99999999",
         "pipe:1",
@@ -1040,9 +1044,9 @@ def _run_hls_pipeline(stream: Stream):
                     f":force_original_aspect_ratio=decrease,"
                     f"pad={STREAM_WIDTH}:{STREAM_HEIGHT}:(ow-iw)/2:(oh-ih)/2:black"
                 ),
+                "-fps_mode", "vfr",
                 "-vcodec", "mjpeg",
                 "-q:v", str(FFMPEG_QUALITY),
-                "-r", str(MJPEG_FPS),
                 "-an",
                 "-f", "image2pipe",
                 "-vframes", "99999999",
@@ -1185,9 +1189,9 @@ def run_pipeline(stream: Stream):
                         f":force_original_aspect_ratio=decrease,"
                         f"pad={STREAM_WIDTH}:{STREAM_HEIGHT}:(ow-iw)/2:(oh-ih)/2:black"
                     ),
+                    "-fps_mode", "vfr",
                     "-vcodec", "mjpeg",
                     "-q:v", str(FFMPEG_QUALITY),
-                    "-r", str(output_fps),
                     "-f", "image2pipe",
                     "-vframes", "99999999",
                     "pipe:1",
@@ -1220,9 +1224,9 @@ def run_pipeline(stream: Stream):
                         f":force_original_aspect_ratio=decrease,"
                         f"pad={STREAM_WIDTH}:{STREAM_HEIGHT}:(ow-iw)/2:(oh-ih)/2:black"
                     ),
+                    "-fps_mode", "vfr",
                     "-vcodec", "mjpeg",
                     "-q:v", str(FFMPEG_QUALITY),
-                    "-r", str(MJPEG_FPS),
                     "-f", "image2pipe",
                     "-vframes", "99999999",
                     "pipe:1",
@@ -1452,6 +1456,9 @@ STATUS_HTML = """<!DOCTYPE html>
     </div>
     <div class="feed-status" id="home-status"></div>
     <div class="feed-grid" id="home-grid"></div>
+    <div style="text-align:center;margin-top:14px;display:none;" id="home-more-wrap">
+      <button id="home-more" style="background:transparent;color:var(--muted);border:1px solid var(--border);border-radius:6px;padding:8px 20px;font-family:'Orbitron',monospace;font-size:.7rem;letter-spacing:.08em;cursor:pointer;">LOAD MORE</button>
+    </div>
   </div>
 
   <!-- Subscriptions panel (shown when subscriptions file is mounted) -->
@@ -2236,20 +2243,56 @@ STATUS_HTML = """<!DOCTYPE html>
   });
 
   // ── Home feed (inside YouTube tab) ──
-  var homeCard    = document.getElementById("home-card");
-  var homeGrid    = document.getElementById("home-grid");
-  var homeStatus  = document.getElementById("home-status");
-  var homeLoad    = document.getElementById("home-load");
-  var homeRefresh = document.getElementById("home-refresh");
-  var homeLoaded  = false;
+  var homeCard     = document.getElementById("home-card");
+  var homeGrid     = document.getElementById("home-grid");
+  var homeStatus   = document.getElementById("home-status");
+  var homeLoad     = document.getElementById("home-load");
+  var homeRefresh  = document.getElementById("home-refresh");
+  var homeMoreWrap = document.getElementById("home-more-wrap");
+  var homeMoreBtn  = document.getElementById("home-more");
+  var homeAllVideos = [];
+  var homeShown    = 0;
+  var HOME_PAGE    = 16;
 
   // Home feed reuses the feed tab's quality/sync selectors (defined below)
 
+  function makeHomeCard(v) {
+    var card = document.createElement("div");
+    card.className = "feed-card";
+    var dur = fmtDuration(v.duration);
+    var dateStr = "";
+    if (v.upload_date && v.upload_date.length === 8) {
+      dateStr = v.upload_date.slice(0,4) + "-" + v.upload_date.slice(4,6) + "-" + v.upload_date.slice(6,8);
+    }
+    card.innerHTML =
+      '<img class="feed-thumb" src="' + (v.thumb || "") + '" loading="lazy" alt="">' +
+      '<div class="feed-info">' +
+      '<div class="feed-title">' + escHtml(v.title) + '</div>' +
+      '<div style="display:flex;justify-content:space-between;align-items:center;margin-top:4px;">' +
+      '<div style="font-size:.75rem;color:var(--red);font-family:Orbitron,monospace;letter-spacing:.04em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:65%;">' + escHtml(v.channel || "") + '</div>' +
+      '<div style="font-family:monospace;font-size:.75rem;color:var(--muted);white-space:nowrap;">' + (dur ? escHtml(dur) + (dateStr ? " · " : "") : "") + escHtml(dateStr) + '</div>' +
+      '</div></div>';
+    card.addEventListener("click", function () {
+      window.location.href = buildWatchUrl(v.url, feedQuality.value, feedSync.value);
+    });
+    return card;
+  }
+
+  function renderHomePage() {
+    var next = homeAllVideos.slice(homeShown, homeShown + HOME_PAGE);
+    next.forEach(function (v) { homeGrid.appendChild(makeHomeCard(v)); });
+    homeShown += next.length;
+    homeMoreWrap.style.display = homeShown < homeAllVideos.length ? "block" : "none";
+  }
+
   function loadHomeFeed(force) {
-    homeStatus.textContent = "Loading… this may take a minute.";
+    homeStatus.textContent = "Loading…";
     homeLoad.style.display = "none";
     homeRefresh.style.display = "none";
+    homeMoreWrap.style.display = "none";
     homeGrid.innerHTML = "";
+    homeAllVideos = [];
+    homeShown = 0;
     var xhr = new XMLHttpRequest();
     xhr.open("GET", "/subscriptions_feed" + (force ? "?force=1" : ""), true);
     xhr.timeout = 300000;
@@ -2262,36 +2305,26 @@ STATUS_HTML = """<!DOCTYPE html>
       }
       if (data.error) { homeStatus.textContent = "Error: " + data.error; return; }
       var videos = data.videos || [];
-      if (!videos.length) { homeStatus.textContent = "No recent videos (all channels quiet in the last 7 days)."; return; }
+      if (!videos.length) { homeStatus.textContent = "No videos found."; return; }
+      // Sort newest-first; videos with no date keep their original order at the end
+      videos.sort(function (a, b) {
+        var da = a.upload_date && a.upload_date !== "NA" ? a.upload_date : "";
+        var db = b.upload_date && b.upload_date !== "NA" ? b.upload_date : "";
+        if (da && db) return db.localeCompare(da);
+        if (da) return -1;
+        if (db) return 1;
+        return 0;
+      });
+      homeAllVideos = videos;
       var cachedNote = data.cached ? " · cached" : "";
       var builtDate  = data.built_at ? new Date(data.built_at * 1000).toLocaleTimeString() : "";
       homeStatus.textContent = videos.length + " videos" + cachedNote + (builtDate ? " · updated " + builtDate : "");
-      videos.forEach(function (v) {
-        var card = document.createElement("div");
-        card.className = "feed-card";
-        var dur = fmtDuration(v.duration);
-        var dateStr = "";
-        if (v.upload_date && v.upload_date.length === 8) {
-          dateStr = v.upload_date.slice(0,4) + "-" + v.upload_date.slice(4,6) + "-" + v.upload_date.slice(6,8);
-        }
-        card.innerHTML =
-          '<img class="feed-thumb" src="' + (v.thumb || "") + '" loading="lazy" alt="">' +
-          '<div class="feed-info">' +
-          '<div class="feed-title">' + escHtml(v.title) + '</div>' +
-          '<div style="display:flex;justify-content:space-between;align-items:center;margin-top:4px;">' +
-          '<div style="font-size:.75rem;color:var(--red);font-family:Orbitron,monospace;letter-spacing:.04em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:65%;">' + escHtml(v.channel || "") + '</div>' +
-          '<div style="font-family:monospace;font-size:.75rem;color:var(--muted);white-space:nowrap;">' + (dur ? escHtml(dur) + (dateStr ? " · " : "") : "") + escHtml(dateStr) + '</div>' +
-          '</div></div>';
-        card.addEventListener("click", function () {
-          window.location.href = buildWatchUrl(v.url, feedQuality.value, feedSync.value);
-        });
-        homeGrid.appendChild(card);
-      });
-      homeLoaded = true;
+      renderHomePage();
     };
     xhr.send();
   }
 
+  homeMoreBtn.addEventListener("click", renderHomePage);
   homeLoad.addEventListener("click", function () { loadHomeFeed(false); });
   homeRefresh.addEventListener("click", function () { loadHomeFeed(true); });
 
