@@ -1646,15 +1646,12 @@ STATUS_HTML = """<!DOCTYPE html>
 
 <script>
 (function () {
-  // ── Tab switching (outside try-catch to guarantee it always works) ──
+  // ── Tab switching ──
   var tabBtns = document.querySelectorAll(".tab-btn");
   var tabPanels = document.querySelectorAll(".tab-panel");
-  // Debug: show tab count so we can verify JS is running
-  document.title = "OCS [tabs:" + tabBtns.length + "]";
   Array.prototype.forEach.call(tabBtns, function (btn) {
     btn.addEventListener("click", function () {
       var target = btn.getAttribute("data-tab");
-      document.title = "OCS > " + target;
       Array.prototype.forEach.call(tabBtns, function (b) { b.classList.remove("active"); });
       Array.prototype.forEach.call(tabPanels, function (p) { p.classList.remove("active"); });
       btn.classList.add("active");
@@ -2267,7 +2264,7 @@ STATUS_HTML = """<!DOCTYPE html>
           '<div class="feed-info">' +
           '<div class="feed-title">' + escHtml(v.title) + '</div>' +
           '<div style="display:flex;justify-content:space-between;align-items:center;margin-top:4px;">' +
-          '<div style="font-size:.75rem;color:var(--red);font-family:\'Orbitron\',monospace;letter-spacing:.04em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:65%;">' + escHtml(v.channel || "") + '</div>' +
+          '<div style="font-size:.75rem;color:var(--red);font-family:Orbitron,monospace;letter-spacing:.04em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:65%;">' + escHtml(v.channel || "") + '</div>' +
           '<div style="font-family:monospace;font-size:.75rem;color:var(--muted);white-space:nowrap;">' + (dur ? escHtml(dur) + (dateStr ? " · " : "") : "") + escHtml(dateStr) + '</div>' +
           '</div></div>';
         card.addEventListener("click", function () {
@@ -2918,12 +2915,7 @@ STATUS_HTML = """<!DOCTYPE html>
     localOpened = true;
     loadLocalDir("");
   });
-  } catch(e) {
-    var errDiv = document.createElement("div");
-    errDiv.style.cssText = "position:fixed;top:0;left:0;right:0;background:#e31937;color:white;padding:16px;font-family:monospace;font-size:14px;z-index:9999;white-space:pre-wrap;";
-    errDiv.textContent = "JS ERROR: " + e.message + "\\n" + (e.stack || "");
-    document.body.appendChild(errDiv);
-  }
+  } catch(e) { /* init error — non-fatal */ }
 })();
 </script>
 </body></html>"""
