@@ -1646,19 +1646,20 @@ STATUS_HTML = """<!DOCTYPE html>
 
 <script>
 (function () {
-  // ── Tab switching ──
+  // ── Tab switching (outside try-catch to guarantee it always works) ──
   var tabBtns = document.querySelectorAll(".tab-btn");
   var tabPanels = document.querySelectorAll(".tab-panel");
-  tabBtns.forEach(function (btn) {
+  Array.prototype.forEach.call(tabBtns, function (btn) {
     btn.addEventListener("click", function () {
       var target = btn.getAttribute("data-tab");
-      tabBtns.forEach(function (b) { b.classList.remove("active"); });
-      tabPanels.forEach(function (p) { p.classList.remove("active"); });
+      Array.prototype.forEach.call(tabBtns, function (b) { b.classList.remove("active"); });
+      Array.prototype.forEach.call(tabPanels, function (p) { p.classList.remove("active"); });
       btn.classList.add("active");
       document.getElementById("tab-" + target).classList.add("active");
     });
   });
 
+  try {
   // ── Shared utilities ──
   function pad(n) { return n < 10 ? "0" + n : "" + n; }
   function fmtDuration(secs) {
@@ -1744,7 +1745,7 @@ STATUS_HTML = """<!DOCTYPE html>
 
   function resolveInputUrl(raw) {
     // Full URL (YouTube, Twitch, X/Twitter, etc.) — pass through
-    if (/^https?:\/\//i.test(raw)) return raw;
+    if (/^https?:[/][/]/i.test(raw)) return raw;
     // Bare YouTube video ID (11 alphanum chars)
     if (/^[A-Za-z0-9_-]{11}$/.test(raw)) {
       return "https://www.youtube.com/watch?v=" + raw;
@@ -2705,9 +2706,9 @@ STATUS_HTML = """<!DOCTYPE html>
   function aceContentId(raw) {
     raw = (raw || "").trim();
     // acestream://HASH → extract hash
-    if (/^acestream:\/\//i.test(raw)) raw = raw.slice(12);
+    if (/^acestream:[/][/]/i.test(raw)) raw = raw.slice(12);
     // Full URL → extract id param
-    if (/^https?:\/\//i.test(raw)) {
+    if (/^https?:[/][/]/i.test(raw)) {
       var m = raw.match(/[?&]id=([a-f0-9]{40})/i);
       if (m) return m[1];
     }
@@ -2913,6 +2914,12 @@ STATUS_HTML = """<!DOCTYPE html>
     localOpened = true;
     loadLocalDir("");
   });
+  } catch(e) {
+    var errDiv = document.createElement("div");
+    errDiv.style.cssText = "position:fixed;top:0;left:0;right:0;background:#e31937;color:white;padding:16px;font-family:monospace;font-size:14px;z-index:9999;white-space:pre-wrap;";
+    errDiv.textContent = "JS ERROR: " + e.message + "\\n" + (e.stack || "");
+    document.body.appendChild(errDiv);
+  }
 })();
 </script>
 </body></html>"""
@@ -3311,7 +3318,7 @@ def render_status_page() -> str:
     else:
         rows = []
         for s in sorted(streams, key=lambda x: x.created_at, reverse=True):
-            title = s.title or s.url[:60] + "…"
+            title = (s.title or s.url[:60] + "…").replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
             stream_url = f"/watch?url={quote(s.url, safe='')}"
             quality_tag = ""
             if s.quality:
