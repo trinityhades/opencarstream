@@ -8,6 +8,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         curl \
         ca-certificates \
         nodejs \
+        npm \
     && rm -rf /var/lib/apt/lists/*
 
 # Install yt-dlp from PyPI so the image works on both arm64 and amd64.
@@ -19,7 +20,7 @@ FROM base AS app
 WORKDIR /app
 
 COPY server.py .
-COPY ogv-dist ./ogv-dist
+RUN npm install ogv --no-save && mv node_modules/ogv/dist ./ogv-dist && rm -rf node_modules package-lock.json
 
 # Non-root user for security
 RUN useradd -m -u 1000 streamer

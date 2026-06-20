@@ -9,6 +9,8 @@ NC='\033[0;3m' # No Color
 NC_BOLD='\033[1m'
 CLEAR='\033[0m'
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
 echo -e "${BLUE}=== OpenCarStream Native Apple Silicon Setup ===${CLEAR}"
 
 # 1. System check
@@ -59,30 +61,43 @@ else
     echo -e "${GREEN}[OK] node is already installed.${CLEAR}"
 fi
 
+# 3.5. Install ogv-dist
+echo -e "${BLUE}Setting up ogv-dist...${CLEAR}"
+if ! command -v npm &> /dev/null; then
+    echo -e "${RED}[ERROR] npm is not found. Node.js installation may be broken.${CLEAR}"
+    exit 1
+fi
+echo "Installing ogv package locally..."
+npm install --prefix "$SCRIPT_DIR" ogv --no-save
+echo "Copying distribution files to ogv-dist..."
+rm -rf "$SCRIPT_DIR/ogv-dist"
+cp -R "$SCRIPT_DIR/node_modules/ogv/dist" "$SCRIPT_DIR/ogv-dist"
+rm -rf "$SCRIPT_DIR/node_modules" "$SCRIPT_DIR/package-lock.json"
+echo -e "${GREEN}[OK] ogv-dist is set up successfully.${CLEAR}"
+
 # 4. Set up python virtual environment & dependencies
 echo -e "${BLUE}Setting up Python virtual environment...${CLEAR}"
 if command -v uv &> /dev/null; then
     echo "Found uv. Setting up virtual environment with uv..."
-    uv venv .venv
-    # Activate virtual environment to install yt-dlp
-    source .venv/bin/activate
-    echo "Installing/updating yt-dlp with uv..."
-    uv pip install --upgrade yt-dlp
+    uv venv --allow-existing "$SCRIPT_DIR/.venv"
+    source "$SCRIPT_DIR/.venv/bin/activate"
+    echo "Installing dependencies with uv..."
+    uv pip install --upgrade yt-dlp requests browser-cookie3
 else
     echo "uv not found. Falling back to python3 venv..."
-    python3 -m venv .venv
-    source .venv/bin/activate
+    python3 -m venv "$SCRIPT_DIR/.venv"
+    source "$SCRIPT_DIR/.venv/bin/activate"
     echo "Upgrading pip..."
     pip install --upgrade pip
-    echo "Installing/updating yt-dlp..."
-    pip install --upgrade yt-dlp
+    echo "Installing dependencies..."
+    pip install --upgrade yt-dlp requests browser-cookie3
 fi
 
 # 5. Create native directories
 echo -e "${BLUE}Creating default directories...${CLEAR}"
-mkdir -p config
-mkdir -p local-media
-mkdir -p iptv_lists
+mkdir -p "$SCRIPT_DIR/config"
+mkdir -p "$SCRIPT_DIR/local-media"
+mkdir -p "$SCRIPT_DIR/iptv_lists"
 
 echo -e "\n${GREEN}=== Setup Completed Successfully! ===${CLEAR}"
 echo -e "To start the server natively, run:"

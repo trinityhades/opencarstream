@@ -1,4 +1,8 @@
 #!/usr/bin/env python3
+# /// script
+# requires-python = ">=3.12"
+# dependencies = ["requests"]
+# ///
 """
 Populate YouTube channel logos for subscriptions in subscriptions.json.
 Scrapes the public channel page HTML to extract the 'og:image' tag.
