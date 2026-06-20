@@ -1192,7 +1192,7 @@ def _probe_local_codecs(abs_path: str) -> tuple[str, str]:
 def _direct_input_args(url: str, extra_headers: dict[str, str] | None = None) -> list[str]:
     """ffmpeg input flags for a direct stream URL."""
     from urllib.parse import urlparse, parse_qs
-    if _is_local_media_url(url):
+    if _is_local_media_url(url) or (os.path.isabs(url) and _has_supported_media_ext(url)):
         return ["-re"]
     if _is_acestream(url):
         return ["-timeout", "10000000"]
@@ -4686,7 +4686,156 @@ OGV_WATCH_HTML = """<!DOCTYPE html>
   var profile = {{profile_json}};
   var seekS = parseInt("{{seek_s}}", 10) || 0;
   OGVLoader.base = "/ogv-dist";
-  var player = new OGVPlayer({base: "/ogv-dist", worker: true});
+  function ProgressiveOgvStream(url) {
+    this.url = url;
+    this.length = -1;
+    this.loaded = false;
+    this.loading = false;
+    this.seekable = false;
+    this.buffering = false;
+    this.seeking = false;
+    this.headers = {};
+    this.offset = 0;
+    this.eof = false;
+    this._writeOffset = 0;
+    this._chunks = [];
+    this._waiters = [];
+    this._error = null;
+    this._abort = null;
+  }
+  ProgressiveOgvStream.prototype._notify = function () {
+    var waiters = this._waiters.splice(0);
+    for (var i = 0; i < waiters.length; i++) waiters[i]();
+  };
+  ProgressiveOgvStream.prototype._append = function (buf) {
+    if (!buf || !buf.byteLength) return;
+    this._chunks.push({start: this._writeOffset, end: this._writeOffset + buf.byteLength, bytes: new Uint8Array(buf)});
+    this._writeOffset += buf.byteLength;
+    this._notify();
+  };
+  ProgressiveOgvStream.prototype.load = function () {
+    var self = this;
+    if (self.loading) throw new Error("cannot load when loading");
+    if (self.loaded) throw new Error("cannot load when loaded");
+    self.loading = true;
+    self._abort = window.AbortController ? new AbortController() : null;
+    return fetch(self.url, {cache: "no-store", signal: self._abort ? self._abort.signal : undefined})
+      .then(function (resp) {
+        if (!resp.ok) throw new Error("HTTP error " + resp.status);
+        resp.headers.forEach(function (value, key) { self.headers[key.toLowerCase()] = value; });
+        var len = parseInt(resp.headers.get("Content-Length") || "-1", 10);
+        self.length = isFinite(len) && len >= 0 ? len : -1;
+        self.loaded = true;
+        self.loading = false;
+        if (!resp.body || !resp.body.getReader) {
+          return resp.arrayBuffer().then(function (buf) {
+            self._append(buf);
+            self.eof = true;
+            self._notify();
+          });
+        }
+        var reader = resp.body.getReader();
+        function pump() {
+          return reader.read().then(function (result) {
+            if (result.done) {
+              self.eof = true;
+              self._notify();
+              return;
+            }
+            self._append(result.value.buffer.slice(result.value.byteOffset, result.value.byteOffset + result.value.byteLength));
+            return pump();
+          });
+        }
+        pump().catch(function (err) {
+          self._error = err;
+          self.eof = true;
+          self._notify();
+        });
+      })
+      .catch(function (err) {
+        self.loading = false;
+        self._error = err;
+        throw err;
+      });
+  };
+  ProgressiveOgvStream.prototype.bytesAvailable = function (max) {
+    max = max === undefined ? Infinity : max;
+    var cursor = this.offset;
+    var available = 0;
+    for (var i = 0; i < this._chunks.length && available < max; i++) {
+      var chunk = this._chunks[i];
+      if (chunk.end <= cursor) continue;
+      if (chunk.start > cursor) break;
+      var take = Math.min(chunk.end - cursor, max - available);
+      available += take;
+      cursor += take;
+    }
+    return available;
+  };
+  ProgressiveOgvStream.prototype.buffer = function (bytes) {
+    var self = this;
+    return new Promise(function (resolve, reject) {
+      function check() {
+        if (self._error) {
+          reject(self._error);
+          return;
+        }
+        var available = self.bytesAvailable(bytes);
+        if (available >= bytes || self.eof) {
+          resolve(available);
+          return;
+        }
+        self._waiters.push(check);
+      }
+      check();
+    });
+  };
+  ProgressiveOgvStream.prototype.readBytes = function (target) {
+    if (!(target instanceof Uint8Array)) throw new Error("invalid input");
+    var requested = target.byteLength;
+    var available = this.bytesAvailable(requested);
+    var copied = 0;
+    while (copied < available && this._chunks.length) {
+      var chunk = this._chunks[0];
+      if (chunk.end <= this.offset) {
+        this._chunks.shift();
+        continue;
+      }
+      if (chunk.start > this.offset) break;
+      var chunkOffset = this.offset - chunk.start;
+      var take = Math.min(chunk.end - this.offset, available - copied);
+      target.set(chunk.bytes.subarray(chunkOffset, chunkOffset + take), copied);
+      copied += take;
+      this.offset += take;
+      if (this.offset >= chunk.end) this._chunks.shift();
+    }
+    return copied;
+  };
+  ProgressiveOgvStream.prototype.readSync = function (bytes) {
+    var count = this.bytesAvailable(bytes);
+    var out = new Uint8Array(count);
+    var read = this.readBytes(out);
+    if (read !== count) throw new Error("failed to read expected data");
+    return out.buffer;
+  };
+  ProgressiveOgvStream.prototype.read = function (bytes) {
+    var self = this;
+    return self.buffer(bytes).then(function () { return self.readSync(bytes); });
+  };
+  ProgressiveOgvStream.prototype.seek = function () {
+    return Promise.reject(new Error("seek on non-seekable stream"));
+  };
+  ProgressiveOgvStream.prototype.abort = function () {
+    if (this._abort) this._abort.abort();
+    this.eof = true;
+    this._notify();
+  };
+  ProgressiveOgvStream.prototype.getBufferedRanges = function () {
+    return this._chunks.map(function (chunk) { return [chunk.start, chunk.end]; });
+  };
+
+  var progressiveStream = new ProgressiveOgvStream(streamUrl);
+  var player = new OGVPlayer({base: "/ogv-dist", stream: progressiveStream});
   var stage = document.getElementById("stage");
   var statusEl = document.getElementById("status");
   var playBtn = document.getElementById("playPause");
@@ -4786,10 +4935,10 @@ OGV_WATCH_HTML = """<!DOCTYPE html>
     window.location.href = target;
   }
   function bump(delta) {
-    if (isFinite(player.duration) && player.duration > 0) {
-      player.currentTime = Math.max(0, Math.min(player.duration - 1, player.currentTime + delta));
-    } else {
+    if (originalUrl) {
       reloadAt(seekS + (player.currentTime || 0) + delta);
+    } else if (isFinite(player.duration) && player.duration > 0) {
+      player.currentTime = Math.max(0, Math.min(player.duration - 1, player.currentTime + delta));
     }
   }
   function reveal() {
