@@ -1234,6 +1234,16 @@ def _resolve_mp4_url(url: str, quality: int | None, profile: str | None = None) 
 
     # YouTube, Twitch, etc: resolve a direct CDN URL via yt-dlp and serve it
     # directly to the browser. Prefer H.264+AAC so no transcoding is needed.
+    # However, if quality or profile is above 720p, route to /stream_fmp4 to
+    # merge separate video and audio streams.
+    q_val = quality or 0
+    p_val = 0
+    if profile and profile.isdigit():
+        p_val = int(profile)
+
+    if q_val > 720 or p_val > 720:
+        return "/stream_fmp4?url=" + quote(url, safe="") + transcode_suffix, ""
+
     fmt = (
         f"best[vcodec^=avc][height<={quality}]/best[vcodec^=avc]/best[height<={quality}]/best"
         if quality
@@ -1254,32 +1264,57 @@ def _resolve_mp4_url(url: str, quality: int | None, profile: str | None = None) 
     return "", "Could not resolve a direct playable URL"
 
 
-def _resolve_ffmpeg_input_url(url: str, quality: int | None) -> tuple[str, str, dict[str, str]]:
-    """Return a URL/file target plus request headers that ffmpeg can open directly."""
+def _resolve_ffmpeg_input_url(url: str, quality: int | None) -> tuple[list[dict[str, any]], str]:
+    """Return a list of resolved input dicts (each having 'url' and 'headers') that ffmpeg can open directly, plus any error."""
     if _is_direct_stream(url):
-        return _ffmpeg_input_target(url), "", {}
+        return [{"url": _ffmpeg_input_target(url), "headers": {}}], ""
 
     q = quality or 720
-    fmt = f"best[height<={q}]/best"
+    # Prefer separate bestvideo and bestaudio so we can get high resolutions (e.g. 1080p, 1440p)
+    # If those are not available or not separate, fall back to progressive 'best'.
+    fmt = f"bestvideo[height<={q}]+bestaudio/best[height<={q}]/best"
     try:
         r = subprocess.run(
             ["yt-dlp", "--js-runtimes", "node", "--no-playlist",
              "-f", fmt, "--dump-json", "--quiet", url],
             capture_output=True, text=True, timeout=30,
         )
-        if r.returncode == 0:
-            try:
-                info = json.loads(r.stdout)
-            except json.JSONDecodeError:
-                lines = [line.strip() for line in r.stdout.splitlines() if line.strip().startswith("{")]
-                info = json.loads(lines[-1]) if lines else {}
-            direct_url = (info.get("url") or "").strip()
-            headers = info.get("http_headers") if isinstance(info.get("http_headers"), dict) else {}
-            if direct_url:
-                return direct_url, "", {str(k): str(v) for k, v in headers.items() if v is not None}
-        return "", r.stderr.strip() or "yt-dlp could not resolve a stream URL", {}
+        if r.returncode != 0:
+            return [], r.stderr.strip() or "yt-dlp could not resolve a stream URL"
+        try:
+            info = json.loads(r.stdout)
+        except json.JSONDecodeError:
+            lines = [line.strip() for line in r.stdout.splitlines() if line.strip().startswith("{")]
+            info = json.loads(lines[-1]) if lines else {}
+        if not info:
+            return [], "yt-dlp returned empty info"
+
+        headers = info.get("http_headers") if isinstance(info.get("http_headers"), dict) else {}
+        headers = {str(k): str(v) for k, v in headers.items() if v is not None}
+
+        # Check if yt-dlp selected separate video and audio formats
+        requested_formats = info.get("requested_formats")
+        if requested_formats and len(requested_formats) >= 2:
+            video_info = requested_formats[0]
+            audio_info = requested_formats[1]
+            video_url = (video_info.get("url") or "").strip()
+            audio_url = (audio_info.get("url") or "").strip()
+            v_headers = video_info.get("http_headers") or headers
+            v_headers = {str(k): str(v) for k, v in v_headers.items() if v is not None}
+            a_headers = audio_info.get("http_headers") or headers
+            a_headers = {str(k): str(v) for k, v in a_headers.items() if v is not None}
+            if video_url and audio_url:
+                return [
+                    {"url": video_url, "headers": v_headers},
+                    {"url": audio_url, "headers": a_headers}
+                ], ""
+
+        direct_url = (info.get("url") or "").strip()
+        if direct_url:
+            return [{"url": direct_url, "headers": headers}], ""
+        return [], "Could not resolve a direct playable URL"
     except Exception as e:
-        return "", str(e), {}
+        return [], str(e)
 
 
 def _short_error(msg: str, max_len: int = 1400) -> str:
@@ -1290,11 +1325,10 @@ def _short_error(msg: str, max_len: int = 1400) -> str:
 
 
 def _build_ogv_ffmpeg_cmd(
-    input_url: str,
+    inputs: list[dict],
     seek_s: float = 0.0,
     output: str = "pipe:1",
     duration_limit_s: float | None = None,
-    input_headers: dict[str, str] | None = None,
     profile: str | None = None,
     source_quality: int | None = None,
 ) -> list[str]:
@@ -1302,18 +1336,31 @@ def _build_ogv_ffmpeg_cmd(
     seek_args = ["-ss", str(int(seek_s))] if seek_s > 0 else []
     duration_args = ["-t", str(duration_limit_s)] if duration_limit_s else []
     settings = _profile_settings(profile, source_quality)
-    return [
+    cmd = [
         "ffmpeg",
         "-loglevel", "error",
         *_ffmpeg_hwaccel_args(),
-        *_direct_input_args(input_url, extra_headers=input_headers),
-        *seek_args,
-        "-probesize", "10M",
-        "-analyzeduration", "5M",
-        "-i", input_url,
-        *duration_args,
-        "-map", "0:v:0",
-        "-map", "0:a:0?",
+    ]
+    for inp in inputs:
+        cmd.extend(_direct_input_args(inp["url"], extra_headers=inp["headers"]))
+        if seek_s > 0:
+            cmd.extend(seek_args)
+        cmd.extend(["-probesize", "10M", "-analyzeduration", "5M"])
+        cmd.extend(["-i", inp["url"]])
+
+    cmd.extend(duration_args)
+    if len(inputs) >= 2:
+        cmd.extend([
+            "-map", "0:v:0",
+            "-map", "1:a:0?",
+        ])
+    else:
+        cmd.extend([
+            "-map", "0:v:0",
+            "-map", "0:a:0?",
+        ])
+
+    cmd.extend([
         "-vf", _scale_pad_filter(settings["width"], settings["height"]),
         "-r", str(settings["fps"]),
         "-c:v", "libtheora",
@@ -1322,7 +1369,8 @@ def _build_ogv_ffmpeg_cmd(
         "-b:a", settings["audio"],
         "-f", "ogg",
         output,
-    ]
+    ])
+    return cmd
 
 
 def _start_audio_buffer(stream: Stream):
@@ -5571,6 +5619,7 @@ class Handler(BaseHTTPRequestHandler):
         # For local files, probe codecs to skip unnecessary transcoding
         video_args: list[str]
         audio_args: list[str]
+        inputs: list[dict] = []
         if _is_local_media_url(url):
             vcodec, acodec = _probe_local_codecs(_ffmpeg_input_target(url))
             fname = os.path.basename(_ffmpeg_input_target(url))
@@ -5588,22 +5637,58 @@ class Handler(BaseHTTPRequestHandler):
                 alog = f"audio:{acodec}→aac"
             log.info(f"fMP4 {fname}: {vlog}, {alog}")
         else:
+            var_inputs, err = _resolve_ffmpeg_input_url(url, quality)
+            if not var_inputs:
+                self._error(502, f"Could not resolve stream: {err}")
+                return
+            inputs = var_inputs
             video_args = _h264_video_args(mp4_width, mp4_height, mp4_bitrate)
             audio_args = ["-c:a", "aac", "-b:a", MP4_AUDIO_BITRATE, "-ar", "48000", "-ac", "2"]
 
-        ff_cmd = [
-            "ffmpeg",
-            "-loglevel", "error",
-            *_ffmpeg_hwaccel_args(),
-            *_direct_input_args(url),
-            "-i", _ffmpeg_input_target(url),
-            *video_args,
-            *audio_args,
-            "-movflags", "frag_keyframe+empty_moov+default_base_moof",
-            "-frag_duration", "1000000",
-            "-f", "mp4",
-            "pipe:1",
-        ]
+        if _is_local_media_url(url):
+            ff_cmd = [
+                "ffmpeg",
+                "-loglevel", "error",
+                *_ffmpeg_hwaccel_args(),
+                *_direct_input_args(url),
+                "-i", _ffmpeg_input_target(url),
+                *video_args,
+                *audio_args,
+                "-movflags", "frag_keyframe+empty_moov+default_base_moof",
+                "-frag_duration", "1000000",
+                "-f", "mp4",
+                "pipe:1",
+            ]
+        else:
+            ff_cmd = [
+                "ffmpeg",
+                "-loglevel", "error",
+                *_ffmpeg_hwaccel_args(),
+            ]
+            for inp in inputs:
+                ff_cmd.extend(_direct_input_args(inp["url"], extra_headers=inp["headers"]))
+                ff_cmd.extend(["-i", inp["url"]])
+
+            if len(inputs) >= 2:
+                ff_cmd.extend([
+                    "-map", "0:v:0",
+                    "-map", "1:a:0",
+                ])
+            else:
+                ff_cmd.extend([
+                    "-map", "0:v:0",
+                    "-map", "0:a:0?",
+                ])
+
+            ff_cmd.extend([
+                *video_args,
+                *audio_args,
+                "-movflags", "frag_keyframe+empty_moov+default_base_moof",
+                "-frag_duration", "1000000",
+                "-f", "mp4",
+                "pipe:1",
+            ])
+
         ff_proc = None
         try:
             ff_proc = subprocess.Popen(
@@ -5700,19 +5785,18 @@ class Handler(BaseHTTPRequestHandler):
 
     def _serve_ogv_diagnostic(self, url: str, quality: int | None = None, seek_s: float = 0.0, profile: str | None = None):
         """Run the OGV resolver/transcoder briefly and return a JSON diagnosis."""
-        input_url, err, input_headers = _resolve_ffmpeg_input_url(url, quality)
-        if not input_url:
+        inputs, err = _resolve_ffmpeg_input_url(url, quality)
+        if not inputs:
             err = _short_error(err or "yt-dlp could not resolve a stream URL")
             log.warning("OGV resolve failed url=%s quality=%s err=%s", url[:180], quality, err)
             self._json({"ok": False, "stage": "resolve", "error": err, "http_status": 502})
             return
 
         ff_cmd = _build_ogv_ffmpeg_cmd(
-            input_url,
+            inputs,
             seek_s=seek_s,
             output="pipe:1",
             duration_limit_s=2,
-            input_headers=input_headers,
             profile=profile,
             source_quality=quality,
         )
@@ -5779,17 +5863,16 @@ class Handler(BaseHTTPRequestHandler):
         last_err = ""
         try:
             for attempt in range(1, 3):
-                input_url, err, input_headers = _resolve_ffmpeg_input_url(url, quality)
-                if not input_url:
+                inputs, err = _resolve_ffmpeg_input_url(url, quality)
+                if not inputs:
                     last_err = _short_error(err or "yt-dlp could not resolve a stream URL")
                     log.warning("OGV resolve failed attempt=%s url=%s quality=%s err=%s", attempt, url[:180], quality, last_err)
                     time.sleep(0.4)
                     continue
 
                 ff_cmd = _build_ogv_ffmpeg_cmd(
-                    input_url,
+                    inputs,
                     seek_s=seek_s,
-                    input_headers=input_headers,
                     profile=profile,
                     source_quality=quality,
                 )
