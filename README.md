@@ -1,4 +1,9 @@
-# 🚗 OpenCarStream
+[Back to top](#top)
+<a name="top"></a>
+<div align="center">
+
+<!-- Glowing Orbitron Header -->
+<img src="https://readme-typing-svg.demolab.com?font=Orbitron&weight=900&size=38&color=E31937&center=true&vCenter=true&duration=3000&pause=10000&width=500&height=70&lines=OPENCARSTREAM" alt="OPENCARSTREAM">
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 [![Platform](https://img.shields.io/badge/Platform-Docker%20%7C%20macOS%20%28Apple%20Silicon%29-brightgreen)]()
@@ -6,6 +11,8 @@
 [![Security](https://img.shields.io/badge/Security-Admin%20Authentication-red)]()
 
 Stream high-quality videos directly to your Tesla's integrated web browser. OpenCarStream seamlessly handles transcode profiling, serving optimized formats like **OGV (Ogg Theora/Vorbis)** for Tesla-friendly rendering, **native MP4** for high-efficiency browsers, and **MJPEG** as an ultra-compatible fallback.
+
+</div>
 
 ---
 
@@ -89,7 +96,7 @@ To run it as a persistent system background service, use the daemon manager:
 # Follow logs in real-time
 ./manage_service.sh logs
 ```
-For more details, see the dedicated [macOS Native Guide (README_native.md)](file:///Users/trinityhades/opencarstream/README_native.md).
+For more details, see the dedicated [macOS Native Guide](README_native.md).
 
 ---
 
