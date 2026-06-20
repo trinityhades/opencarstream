@@ -5689,16 +5689,67 @@ class Handler(BaseHTTPRequestHandler):
                 "pipe:1",
             ])
 
+        range_header = self.headers.get("Range", "")
+        is_range = range_header.startswith("bytes=")
+        start_byte = 0
+        end_byte = None
+        if is_range:
+            parts = range_header[6:].split("-")
+            try:
+                start_byte = int(parts[0]) if parts[0] else 0
+                end_byte = int(parts[1]) if len(parts) > 1 and parts[1] else None
+            except ValueError:
+                pass
+
+        dummy_total_size = 100 * 1024 * 1024 * 1024  # 100 GB
+
         ff_proc = None
         try:
             ff_proc = subprocess.Popen(
                 ff_cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL
             )
-            self.send_response(200)
-            self.send_header("Content-Type", "video/mp4")
-            self.send_header("Cache-Control", "no-cache, no-store")
-            self.send_header("Connection", "keep-alive")
-            self.end_headers()
+
+            if is_range:
+                if start_byte == 0 and end_byte == 1:
+                    first_two_bytes = ff_proc.stdout.read(2)
+                    self.send_response(206)
+                    self.send_header("Content-Type", "video/mp4")
+                    self.send_header("Content-Range", f"bytes 0-1/{dummy_total_size}")
+                    self.send_header("Content-Length", "2")
+                    self.send_header("Accept-Ranges", "bytes")
+                    self.send_header("Cache-Control", "no-cache, no-store")
+                    self.end_headers()
+                    self.wfile.write(first_two_bytes)
+                    self.wfile.flush()
+                    return
+
+                target_end = end_byte if end_byte is not None else dummy_total_size - 1
+                length = target_end - start_byte + 1
+                self.send_response(206)
+                self.send_header("Content-Type", "video/mp4")
+                self.send_header("Content-Range", f"bytes {start_byte}-{target_end}/{dummy_total_size}")
+                self.send_header("Content-Length", str(length))
+                self.send_header("Accept-Ranges", "bytes")
+                self.send_header("Cache-Control", "no-cache, no-store")
+                self.send_header("Connection", "keep-alive")
+                self.end_headers()
+            else:
+                self.send_response(200)
+                self.send_header("Content-Type", "video/mp4")
+                self.send_header("Accept-Ranges", "bytes")
+                self.send_header("Cache-Control", "no-cache, no-store")
+                self.send_header("Connection", "keep-alive")
+                self.end_headers()
+
+            if start_byte > 0:
+                discarded = 0
+                while discarded < start_byte:
+                    to_read = min(65536, start_byte - discarded)
+                    buf = ff_proc.stdout.read(to_read)
+                    if not buf:
+                        break
+                    discarded += len(buf)
+
             while True:
                 chunk = ff_proc.stdout.read(65536)
                 if not chunk:
