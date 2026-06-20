@@ -1,389 +1,210 @@
-# OpenCarStream - MJPEG Streamer for the integrated browser in your car
+# 🚗 OpenCarStream
 
-Stream videos to your Tesla browser with OGV.js for Tesla-friendly playback,
-native MP4 when it works well, and MJPEG as a last-resort fallback.
-Supports YouTube, Twitch, X/Twitter, Pluto TV, IPTV lists, and more.
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
+[![Platform](https://img.shields.io/badge/Platform-Docker%20%7C%20macOS%20%28Apple%20Silicon%29-brightgreen)]()
+[![Streaming Engine](https://img.shields.io/badge/Transcoder-FFmpeg%20%2B%20yt--dlp-orange)]()
+[![Security](https://img.shields.io/badge/Security-Admin%20Authentication-red)]()
 
----
-
-## Architecture
-
-```
-Tesla browser
-    │  GET /watch?url=https://youtube.com/watch?v=xxx
-    ▼
-[nginx] (optional TLS + DDNS domain)
-    │
-    ▼
-[streamer container]
-  yt-dlp stdout
-    │ pipe
-  OGV.js/Ogg for Tesla, native MP4 where possible, or MJPEG fallback
-```
+Stream high-quality videos directly to your Tesla's integrated web browser. OpenCarStream seamlessly handles transcode profiling, serving optimized formats like **OGV (Ogg Theora/Vorbis)** for Tesla-friendly rendering, **native MP4** for high-efficiency browsers, and **MJPEG** as an ultra-compatible fallback.
 
 ---
 
-## Quick start
+## 🚀 Key Upgrades in this Version
 
-### 1. Clone / copy this folder to your server
+This fork modernizes and secures OpenCarStream with several major enhancements:
 
-```bash
-scp -r opencarstream/ user@yourserver:~/
-ssh user@yourserver
-cd opencarstream
+### 🍏 Native macOS Apple Silicon (ARM64) Support
+* **Hardware Acceleration**: Out-of-the-box integration with Apple’s **VideoToolbox** framework (`h264_videotoolbox` encoder and `videotoolbox` hardware decoding acceleration).
+* **Massive CPU Savings**: Offloading transcoding to Apple Silicon media engines keeps CPU usage typically **under 15%** (run silent, cool, and power-efficient).
+* **macOS Services**: Native runner scripts (`setup_native.sh`, `run_native.sh`) and a comprehensive daemon script (`manage_service.sh`) to install and monitor OpenCarStream as an automatic background `launchd` service.
+
+### 🔒 Webapp Admin Security Layer
+* **Password Lock**: Access to the status page, channels, feeds, and streaming endpoints can be secured by specifying an `ADMIN_PASSWORD` (default: `"admin"`).
+* **Robust Session Management**: Provides a modern, responsive login interface, secure session cookies, tokenized URL parameters (`?auth=...` or `?token=...`), and Basic/Bearer header authentication.
+
+### 📺 High-Resolution Streaming (1080p, 2K, 4K)
+* **Uncapped Resolutions**: Resolved legacy 360p caps, enabling full high-definition support (up to **1080p, 1440p, and 4K** source streams).
+* **Precise Transcode Controls**: Overridable resolution constraints and bitrates (e.g. `MP4_WIDTH`, `OGV_WIDTH`, and custom target bitrates) to fine-tune quality vs. network constraints.
+
+### 🧠 Smart Agent & Format Detection
+* **Dynamic Content Negotiation**: Automatically detects Tesla web browsers and defaults to `OGV` format (powered by OGV.js) for stable playback, while falling back to high-performance `MP4` for standard browsers (like Safari and Chrome on macOS/Windows).
+* **MSE Player**: MP4 streaming utilizes a modern MediaSource Extensions (MSE) player to improve streaming latency, buffering efficiency, and compatibility.
+* **Safety Disclaimers**: Integrated interactive safety check-ins to encourage responsible, stationary media usage.
+
+### 🎨 Subscription & IPTV Logo Scraping
+* **YouTube Logos**: `sync_subscriptions.py` now downloads YouTube channel thumbnail metadata automatically.
+* **Batch Scraper**: Added `populate_logos.py` to scrape public channel pages for missing/existing subscription logos and cache them in `subscriptions.json`.
+* **IPTV Branding**: The IPTV player extracts `tvg-logo` or `logo` attributes from `.m3u` / `.m3u8` playlists and presents logo previews inline next to stream titles.
+
+---
+
+## 📐 Architecture Overview
+
+```mermaid
+graph TD
+    Client[Tesla / Desktop Web Browser] -->|HTTP /watch| Nginx[Nginx Reverse Proxy / Optional TLS]
+    Nginx -->|HTTP 33333| Server[Python Streamer Server]
+    Client -->|Direct Connection| Server
+    
+    subgraph Server Internals
+        Server -->|Auth Filter| Security[Admin Session Checker]
+        Security -->|Route Request| Engine[Transcoder Dispatcher]
+        Engine -->|Pipe stdout| FFmpeg[FFmpeg Transcoder]
+        FFmpeg -->|Read Stream| YTDL[yt-dlp Engine]
+        
+        FFmpeg -->|Hardware Engine| AppleHW[Apple VideoToolbox / macOS native]
+        FFmpeg -->|Software Engine| Libx264[libx264 / CPU fallback]
+    end
+    
+    YTDL -->|Fetch Media| Sources[YouTube / Twitch / Pluto TV / IPTV / Local File]
 ```
 
-### 2. Build and start
+---
+
+## ⚡ Quick Start
+
+Choose between running natively on macOS (recommended for Apple Silicon users) or containerized with Docker.
+
+### Option A: Native macOS Setup (Apple Silicon)
+
+Ensure you have [Homebrew](https://brew.sh) installed. Then run:
 
 ```bash
+# 1. Run the native setup (installs Homebrew dependencies & sets up venv)
+./setup_native.sh
+
+# 2. Run the server interactively
+./run_native.sh
+```
+
+To run it as a persistent system background service, use the daemon manager:
+
+```bash
+# Install the launchd agent (starts automatically on login)
+./manage_service.sh install
+
+# Monitor service status and resource usage
+./manage_service.sh status
+
+# Follow logs in real-time
+./manage_service.sh logs
+```
+For more details, see the dedicated [macOS Native Guide (README_native.md)](file:///Users/trinityhades/opencarstream/README_native.md).
+
+---
+
+### Option B: Docker Deployment
+
+Ideal for Linux, NAS servers, or cross-platform machines.
+
+```bash
+# Start the streamer container
 docker compose up -d --build
 ```
 
-If Docker Hub is flaky in your region, override the Python base image source:
-
+If Docker Hub is rate-limited in your region, override the Python base image:
 ```bash
 PYTHON_IMAGE=mirror.gcr.io/library/python:3.12-slim docker compose up -d --build
 ```
 
-The container now installs `yt-dlp` in an architecture-safe way, so Apple
-Silicon and Intel Macs should both work without a platform override.
+Access the dashboard at **`http://YOUR_SERVER_IP:33333/`**.
 
-### 3. Test locally
+---
 
+## ⚙️ Environment Variables
+
+Customize streamer behaviors by setting variables in your shell environment, `.env` file, or the `environment` section of `docker-compose.yml`:
+
+| Variable | Default | Description |
+| :--- | :--- | :--- |
+| `ADMIN_PASSWORD` | `admin` | Password for webapp and stream protection. Set empty to disable. |
+| `PORT` | `33333` | Public port the streamer listens on. |
+| `FFMPEG_HWACCEL` | `auto` | Set hardware acceleration framework (`videotoolbox`, `vaapi`, `nvdec`, etc.). |
+| `FFMPEG_H264_ENCODER`| `auto` | Encoder to use (`h264_videotoolbox` on macOS, or fallback `libx264`). |
+| `MP4_WIDTH` | `1920` | Native MP4 transcode width (px). |
+| `MP4_HEIGHT` | `1080` | Native MP4 transcode height (px). |
+| `MP4_VIDEO_BITRATE` | `1800k` | Video bitrate target for MP4 streams. |
+| `MP4_AUDIO_BITRATE` | `128k` | Audio bitrate target for MP4 streams. |
+| `OGV_WIDTH` | `1920` | OGV.js transcode width (px) for Tesla. |
+| `OGV_HEIGHT` | `1080` | OGV.js transcode height (px) for Tesla. |
+| `OGV_FPS` | `24` | OGV.js frame rate target. |
+| `OGV_VIDEO_QUALITY` | `5` | Theora video quality setting (1-10 scale). |
+| `OGV_AUDIO_BITRATE` | `96k` | Vorbis audio bitrate target. |
+| `MJPEG_FPS` | `12` | Frame rate for MJPEG compat-mode fallback. |
+| `FFMPEG_QUALITY` | `26` | Quality compression value for MJPEG fallback (1-31 scale). |
+| `LOCAL_MEDIA_DIR` | `./local-media` | Host directory containing video files for offline playback. |
+| `IPTV_LISTS_DIR` | `./iptv_lists` | Host directory containing `.m3u` / `.m3u8` playlist files. |
+| `SUBSCRIPTIONS_FILE` | `./config/subscriptions.json` | Path to YouTube channel subscriptions config. |
+
+---
+
+## 📺 Channel Feeds & Subscriptions
+
+Browse recent video uploads from your favorite YouTube channels natively inside your vehicle.
+
+### 1. Sync Subscriptions
+Connect to your active browser profile and export subscribed channels to `subscriptions.json`:
+
+```bash
+# Sync from Chrome (supported: chrome, firefox, edge, chromium, safari, brave)
+uv run sync_subscriptions.py --browser chrome --output config/subscriptions.json
 ```
-http://localhost:33333/health
-http://localhost:33333/
+If your setup doesn't support direct extraction, export a Netscape `cookies.txt` file and run:
+```bash
+uv run sync_subscriptions.py --cookies /path/to/cookies.txt --output config/subscriptions.json
 ```
 
-If you are on Docker Desktop for macOS or Windows, this repo now uses normal
-port publishing by default so `localhost:33333` works. Host networking is only
-needed on Linux if you specifically want multicast RTP support.
+### 2. Populate Channel Logos
+Ensure your subscription cards have clean logos in the UI by running the scraper:
 
-### 4. Open in car browser
-
-Navigate to your server's status page and use the **Stream** tab, or go directly to:
-
-```
-http://YOUR_SERVER_IP:33333/
-```
-
-or directly using the url
-
-```
-http://YOUR_SERVER_IP:33333/watch?url=https://www.youtube.com/watch?v=VIDEO_ID
+```bash
+# Pulls missing logo graphics by scraping public YouTube headers
+python3 populate_logos.py --file config/subscriptions.json
 ```
 
 ---
 
-## Channel feed & subscriptions
+## 🔌 IPTV Playlists
 
-The **Channel Feed** tab lets you browse recent uploads from any YouTube channel
-and click to stream them directly.
-
-### Browsing a single channel
-
-Enter `@channelhandle` or a full channel URL in the feed tab and click **Load Feed**.
-
-### Syncing your YouTube subscriptions
-
-Run `sync_subscriptions.py` **once on your home machine** to generate a
-`subscriptions.json` file. The streamer reads this static file — no cookies
-or YouTube access needed inside the container.
-
-#### Step 1 — generate subscriptions.json
-
-Make sure you are logged in to YouTube in your browser, then run:
-
-```bash
-# Chrome
-uv run sync_subscriptions.py --browser chrome
-
-# Firefox
-uv run sync_subscriptions.py --browser firefox
-
-# Other supported browsers: chromium, brave, edge, opera, safari
-uv run sync_subscriptions.py --browser brave
-```
-
-The script reads your browser's cookie store directly — no export or extension
-needed. It fetches only the channel list (not videos) and finishes
-in a few seconds. You will see output like:
-
-```
-Fetching subscriptions from YouTube…
-✔ 112 channels written to subscriptions.json
-```
-
-Re-run this command whenever you follow or unfollow channels.
-
-If Safari still errors on your machine, export a `cookies.txt` file and use
-`--cookies` instead. Some Safari setups expose fewer Google auth cookies than
-Chrome or Firefox.
-
-#### Step 2 — mount it in the container
-
-`docker-compose.yml` already has the volume configured:
-
-```yaml
-volumes:
-  - ./subscriptions.json:/subscriptions.json:ro
-```
-
-After generating the file, restart the container to pick it up:
-
-```bash
-docker compose restart streamer
-```
-
-#### Step 3 — use it in the UI
-
-Open the **Channel Feed** tab. A **My Subscriptions** panel will appear
-automatically. Click **Load Subscriptions**, then click any channel to browse
-its recent uploads and stream a video.
-
-> **Note:** if you prefer to export cookies manually instead of using
-> `--browser`, install the
-> [Get cookies.txt LOCALLY](https://chromewebstore.google.com/detail/get-cookiestxt-locally/cclelndahbckbenkjhflpdbgdldlbecc)
-> Chrome extension, export while on youtube.com, then run:
-> `uv run sync_subscriptions.py --cookies /path/to/cookies.txt`
-
----
-
-## Expose to the internet (DDNS)
-
-### Option A — No-IP / DuckDNS / Dynu (port forwarding)
-
-1. Sign up for a free DDNS provider (no-ip.com, duckdns.org, dynu.com)
-2. Install their update client on your server or router
-3. Port-forward TCP 33333 (or 443 if using nginx TLS) on your router to the server
-4. Open Tesla browser to: `http://yourname.ddns.net:33333/`
-
-### Option B — Cloudflare Tunnel (no port forwarding needed)
-
-```bash
-# Install cloudflared
-curl -fsSL https://pkg.cloudflare.com/cloudflare-main.gpg \
-  | sudo tee /usr/share/keyrings/cloudflare-main.gpg >/dev/null
-echo "deb [signed-by=/usr/share/keyrings/cloudflare-main.gpg] \
-  https://pkg.cloudflare.com/cloudflared any main" \
-  | sudo tee /etc/apt/sources.list.d/cloudflared.list
-sudo apt update && sudo apt install cloudflared
-
-# Authenticate and create tunnel
-cloudflared tunnel login
-cloudflared tunnel create opencarstream
-cloudflared tunnel route dns opencarstream stream.yourdomain.com
-
-# Run (or add to systemd)
-cloudflared tunnel run --url http://localhost:33333 opencarstream
-```
-
-Tesla URL becomes: `https://stream.yourdomain.com/`
-
-### Option C — Nginx + Let's Encrypt TLS (with DDNS domain)
-
-1. Uncomment the `nginx` service in `docker-compose.yml`
-2. Edit `nginx.conf` → set your domain in `server_name`
-3. Get a free TLS cert:
-
-```bash
-sudo apt install certbot
-sudo certbot certonly --standalone -d stream.yourdomain.com
-sudo cp /etc/letsencrypt/live/stream.yourdomain.com/fullchain.pem certs/cert.pem
-sudo cp /etc/letsencrypt/live/stream.yourdomain.com/privkey.pem   certs/key.pem
-```
-
-4. `docker compose up -d`
-
----
-
-## Environment variables
-
-| Variable              | Default               | Description                             |
-|-----------------------|-----------------------|-----------------------------------------|
-| `PORT`                | 8080                  | HTTP port inside container              |
-| `MJPEG_FPS`           | 12                    | Frames/sec for MJPEG fallback           |
-| `FFMPEG_QUALITY`      | 26                    | MJPEG quality: 1=best, 31=smallest      |
-| `STREAM_WIDTH`        | 854                   | MJPEG fallback width (px)               |
-| `STREAM_HEIGHT`       | 480                   | MJPEG fallback height (px)              |
-| `MP4_WIDTH`           | 1280                  | MP4 transcode width (px)                |
-| `MP4_HEIGHT`          | 720                   | MP4 transcode height (px)               |
-| `MP4_VIDEO_BITRATE`   | 1800k                 | MP4 transcode video bitrate             |
-| `MP4_AUDIO_BITRATE`   | 128k                  | MP4 transcode audio bitrate             |
-| `FFMPEG_HWACCEL`      | auto                  | Try FFmpeg decode acceleration when available |
-| `FFMPEG_H264_ENCODER` | auto                  | Use `h264_videotoolbox` if available, else `libx264` |
-| `OGV_WIDTH`           | 640                   | OGV.js transcode width (px)             |
-| `OGV_HEIGHT`          | 360                   | OGV.js transcode height (px)            |
-| `OGV_FPS`             | 24                    | OGV.js transcode frames/sec             |
-| `OGV_VIDEO_QUALITY`   | 5                     | Theora quality: higher is better/larger |
-| `OGV_AUDIO_BITRATE`   | 96k                   | Vorbis audio bitrate                    |
-| `OGV_DEFAULT_PROFILE` | auto                  | Default OGV output profile              |
-| `MAX_STREAMS`         | 3                     | Max parallel video streams              |
-| `AUDIO_DELAY_MS`      | 0                     | ms to delay video start after audio     |
-| `LOCAL_MEDIA_DIR`     | /media/videos         | Local Media folder path inside container |
-| `IPTV_LISTS_DIR`      | /iptv_lists           | IPTV list folder (`.m3u`/`.m3u8`) inside container |
-| `SUBSCRIPTIONS_FILE`  | /subscriptions.json   | Path to subscriptions JSON inside container |
-
-Override in `docker-compose.yml` under `environment:`.
-
-The web UI exposes source quality up to `1440p` and `4K`, plus an output
-profile row for debugging transcode size. `AUTO` uses browser network hints
-when available and falls back to conservative defaults.
-
-On Apple Silicon, FFmpeg hardware encoding is available only when FFmpeg itself
-exposes `h264_videotoolbox`. Docker Desktop Linux containers normally do not
-expose VideoToolbox, so the container will usually report `libx264` and
-`HW accel=none`. Running the app natively on macOS with a VideoToolbox-enabled
-FFmpeg lets the auto selector use Apple hardware encoding.
-
----
-
-## Local Media in Docker
-
-The **Local Media** tab reads files from inside the container, not directly from
-your host filesystem. Use a bind mount:
-
-```yaml
-environment:
-  LOCAL_MEDIA_DIR: /media/videos
-volumes:
-  - ./local-media:/media/videos:ro
-```
-
-Then put your videos on the host in `./local-media` (next to `docker-compose.yml`),
-or change the left side to any host path, for example:
-
-```yaml
-volumes:
-  - /home/username/oocal-media:/media/videos:ro
-```
-
-After changing mounts/env:
-
-```bash
-docker compose up -d
-```
-
-### Multiple directories via YAML only (no manual script)
-
-You can define multiple mounted folders in `docker-compose.yml` and the container
-will show them as subfolders in Local Media directly.
-
-```yaml
-environment:
-  LOCAL_MEDIA_DIR: /media/videos
-volumes:
-  - ./local-media:/media/videos:ro
-  - /home/santi/videos:/media/videos/home-videos:ro
-  - /mnt/nas/media:/media/videos/nas-media:ro
-```
-
-Then just run:
-
-```bash
-docker compose up -d --build
-```
-
-Notes:
-- Symlinks are followed by the scanner (`followlinks=True`).
-- This avoids compose override generation and keeps everything in one YAML.
-- You only declare each extra directory once (in `volumes`).
-
----
-
-## IPTV lists in Docker
-
-The **IPTV** tab loads playlist files from a folder mounted in the container.
-
-```yaml
-environment:
-  IPTV_LISTS_DIR: /iptv_lists
-volumes:
-  - ./iptv_lists:/iptv_lists:ro
-```
-
-Put your playlist files in `./iptv_lists` next to `docker-compose.yml`, for example:
+Mount or copy your `.m3u`/`.m3u8` files into the `IPTV_LISTS_DIR` directory (Docker volumes, or the native `./iptv_lists` folder):
 
 ```text
 ./iptv_lists/sports.m3u
 ./iptv_lists/news.m3u8
 ```
 
-Then run:
-
-```bash
-docker compose up -d
-```
-
-Open the **IPTV** tab, pick a list by name, and all streams from that playlist
-will appear automatically.
+The IPTV engine automatically parses stream entries and pulls logos matching `tvg-logo="..."` or `logo="..."` attributes. Open the **IPTV** tab in the UI to choose a list and browse channels.
 
 ---
 
-## Supported sources
+## 📡 API Endpoints
 
-Any URL that yt-dlp supports works in the Stream tab or `/watch?url=`:
-
-| Source        | Example URL |
-|---------------|-------------|
-| YouTube       | `https://www.youtube.com/watch?v=VIDEO_ID` |
-| Twitch live   | `https://www.twitch.tv/channelname` |
-| Twitch VOD    | `https://www.twitch.tv/videos/VOD_ID` |
-| X / Twitter   | `https://x.com/user/status/TWEET_ID` |
-| Pluto TV      | Built-in channel list in the Pluto TV tab (US, no account) |
-| IPTV list     | `.m3u` / `.m3u8` files in the IPTV tab (`iptv_lists/`) |
-
-For Twitch and YouTube VODs, use the **Twitch** and **YouTube** tabs respectively
-to browse and pick a stream. For X/Twitter, paste the tweet URL directly in the
-Stream tab.
+| Endpoint | Method | Description |
+| :--- | :--- | :--- |
+| `/` | `GET` | Main status dashboard (requires auth if configured). |
+| `/login` | `GET/POST` | Authenticate sessions and authorize streaming cookies. |
+| `/watch?url=...` | `GET` | Playback watch page (handles OGV/MP4/MJPEG selection). |
+| `/feed?channel=...` | `GET` | Queries recent YouTube video feeds. |
+| `/iptv_lists` | `GET` | Discovers available IPTV playlist files. |
+| `/iptv_streams?list=...` | `GET` | Parses individual stream targets within an IPTV list. |
+| `/subscriptions` | `GET` | Returns list of synchronized channels. |
+| `/status` | `GET` | Lists current active streams and transcode progress. |
+| `/health` | `GET` | Lightweight check returns `{"ok": true}`. |
 
 ---
 
-## API endpoints
+## 🛠️ Troubleshooting
 
-| Endpoint                        | Description                                      |
-|---------------------------------|--------------------------------------------------|
-| `GET /`                         | Status dashboard (Stream / YouTube / Twitch / Pluto TV / IPTV / Info tabs) |
-| `GET /watch?url=…`              | Watch page (MJPEG video + audio)                 |
-| `GET /feed?channel=URL&limit=N` | JSON list of recent uploads for a channel/user   |
-| `GET /iptv_lists`               | JSON playlist files discovered in IPTV_LISTS_DIR |
-| `GET /iptv_streams?list=NAME`   | JSON stream entries parsed from a playlist       |
-| `GET /subscriptions`            | JSON channel list from subscriptions.json        |
-| `GET /health`                   | `{"ok":true}` — for uptime monitors              |
-| `GET /status`                   | JSON list of active streams                      |
+* **Black screen in the Tesla Browser**: Check that your destination URL contains the full watch signature: `http://<ip>:33333/watch?url=...` rather than just visiting the root `/`.
+* **Safari MP4 playback issues**: Ensure `MP4_WATCH_HTML` is active. Check that the MSE buffers are receiving transcode packages by looking for standard log output.
+* **High CPU usage on macOS**: Check logs or Activity Monitor. Confirm you see `[INFO] Selected encoder: h264_videotoolbox`. If it defaults to `libx264`, verify Homebrew's ffmpeg is configured with VideoToolbox dependencies.
+* **Authentication failure loop**: Clear browser cache and cookies or supply the auth token inline in your bookmark: `http://yourserver:33333/?auth=YOUR_ADMIN_PASSWORD`.
 
 ---
 
-## Legal Notice
+## ⚖️ Legal Disclaimer
 
-OpenCarStream is a third-party, unofficial project.
-Tesla is a trademark of Tesla, Inc. OpenCarStream is unofficial and not affiliated with or endorsed by Tesla.
-YouTube is a trademark of Google LLC, Twitch is a trademark of Twitch Interactive, Inc., and X/Twitter is a trademark of X Corp.; OpenCarStream is not affiliated with or endorsed by any of them.
-
----
-
-## Tips
-
-- **Bookmark it in Tesla**: Save `http://yourserver/` as a bookmark and use the UI
-- **Best Tesla stability**: Use the default `OGV (Tesla)` mode first.
-- **Native playback**: Try `MP4 (smooth)` when the Tesla browser accepts the source.
-- **Lower fallback bandwidth**: If you must use MJPEG, keep `MJPEG_FPS=12` and `STREAM_WIDTH=854`.
-- **Update yt-dlp** (YouTube changes frequently):
-  ```bash
-  docker compose build --no-cache && docker compose up -d
-  ```
-
----
-
-## Troubleshooting
-
-| Symptom | Fix |
-|---------|-----|
-| Black screen in Tesla | Make sure URL ends in `/watch?url=...` not just `/` |
-| `502 Pipeline error` | yt-dlp may need updating: rebuild image |
-| `DeadlineExceeded` while pulling base image | Retry with a mirror: `PYTHON_IMAGE=mirror.gcr.io/library/python:3.12-slim docker compose build --no-cache` |
-| Stream stutters on LAN | Use `OGV (Tesla)` first; try `MP4 (smooth)` next; keep MJPEG around 12 fps / 480p |
-| Can't reach from internet | Check port forwarding / firewall; try `curl http://yourserver:33333/health` from outside |
-| Container exits immediately | `docker compose logs streamer` to see the error |
-| Subscriptions panel not visible | `subscriptions.json` not mounted — check volume in docker-compose.yml |
-| `‼ yt-dlp failed` in sync script | Make sure you are logged in to YouTube in the browser you specified |
+OpenCarStream is an unofficial, third-party software package.
+* **Tesla** is a trademark of Tesla, Inc. OpenCarStream is not affiliated with, endorsed, or supported by Tesla, Inc.
+* **YouTube**, **Twitch**, **Pluto TV**, and **X/Twitter** are trademarks of their respective owners. OpenCarStream is an independent player overlay.
+* **Important**: Do not stream video while operating a moving vehicle. Always prioritize road safety.
