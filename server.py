@@ -17,6 +17,8 @@ import signal
 import json
 import logging
 import select
+import secrets
+import base64
 from collections import deque
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from http.server import HTTPServer, BaseHTTPRequestHandler
@@ -104,6 +106,11 @@ MAX_STREAM_AGE_S    = int(os.environ.get("MAX_STREAM_AGE_S", str(5 * 3600)))  # 
 # BCP-47 language tag for YouTube titles/descriptions, e.g. "es", "fr", "de".
 # Leave empty ("") to use YouTube's default (usually matches the video's original language).
 YT_LANG             = os.environ.get("YT_LANG", "")
+
+# Authentication Password (set empty to disable auth, defaults to "admin" if not configured)
+ADMIN_PASSWORD      = os.environ.get("ADMIN_PASSWORD", "admin").strip()
+active_sessions     = set()
+sessions_lock       = threading.Lock()
 LOCAL_MEDIA_EXTS    = {
     ".mp4", ".mkv", ".webm", ".avi", ".mov", ".m4v", ".mpg", ".mpeg", ".ts",
 }
@@ -1863,6 +1870,172 @@ def run_pipeline(stream: Stream):
 
 
 # ── HTML ──────────────────────────────────────────────────────────────────────
+LOGIN_HTML = """<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>OpenCarStream — Login</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@700;900&family=Rajdhani:wght@500;700&display=swap');
+  :root {
+    --red: #e31937;
+    --red-glow: rgba(227, 25, 55, 0.4);
+    --dark: #090909;
+    --panel: rgba(17, 17, 23, 0.75);
+    --border: rgba(37, 37, 48, 0.8);
+    --text: #e0e0ee;
+    --muted: #85859e;
+    --input-bg: rgba(13, 13, 20, 0.6);
+  }
+  @media(prefers-color-scheme:light) {
+    :root {
+      --dark: #f0f0f3;
+      --panel: rgba(255, 255, 255, 0.8);
+      --border: rgba(216, 216, 224, 0.8);
+      --text: #1a1a2e;
+      --muted: #78788f;
+      --input-bg: rgba(234, 234, 240, 0.6);
+    }
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: radial-gradient(circle at center, #1b0e12 0%, var(--dark) 100%);
+    color: var(--text);
+    font-family: 'Rajdhani', sans-serif;
+    font-size: 20px;
+    min-height: 100vh;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    padding: 20px;
+  }
+  .login-container {
+    width: 100%;
+    max-width: 420px;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+    border-radius: 16px;
+    padding: 40px;
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5), 0 0 20px rgba(227, 25, 55, 0.05);
+    text-align: center;
+    animation: fadeIn 0.6s ease-out;
+  }
+  @keyframes fadeIn {
+    from { opacity: 0; transform: translateY(20px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  h1 {
+    font-family: 'Orbitron', monospace;
+    font-weight: 900;
+    font-size: 2.2rem;
+    color: var(--red);
+    letter-spacing: .12em;
+    text-shadow: 0 0 20px var(--red-glow);
+    margin-bottom: 6px;
+  }
+  .sub {
+    color: var(--muted);
+    font-size: .85rem;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+    margin-bottom: 35px;
+  }
+  .form-group {
+    margin-bottom: 24px;
+    text-align: left;
+  }
+  label {
+    display: block;
+    font-family: 'Orbitron', monospace;
+    font-size: 0.75rem;
+    color: var(--muted);
+    margin-bottom: 8px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+  }
+  input[type="password"] {
+    width: 100%;
+    background: var(--input-bg);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 14px 16px;
+    font-size: 1.1rem;
+    outline: none;
+    transition: all 0.3s ease;
+  }
+  input[type="password"]:focus {
+    border-color: var(--red);
+    box-shadow: 0 0 10px var(--red-glow);
+  }
+  .error-message {
+    background: rgba(227, 25, 55, 0.12);
+    color: var(--red);
+    border: 1px solid rgba(227, 25, 55, 0.3);
+    border-radius: 8px;
+    padding: 12px;
+    font-size: 0.9rem;
+    margin-bottom: 24px;
+    text-align: left;
+    display: none;
+  }
+  button {
+    width: 100%;
+    background: var(--red);
+    color: #fff;
+    border: none;
+    border-radius: 8px;
+    padding: 14px 20px;
+    font-family: 'Orbitron', monospace;
+    font-weight: 700;
+    font-size: 0.9rem;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    cursor: pointer;
+    box-shadow: 0 4px 12px rgba(227, 25, 55, 0.2);
+    transition: all 0.2s ease;
+  }
+  button:hover {
+    background: #ff2a4b;
+    box-shadow: 0 6px 16px rgba(227, 25, 55, 0.4);
+    transform: translateY(-1px);
+  }
+  button:active {
+    transform: translateY(1px);
+  }
+</style>
+</head>
+<body>
+<div class="login-container">
+  <h1>OPENCARSTREAM</h1>
+  <p class="sub">Streaming launcher for Tesla</p>
+  
+  <div id="error" class="error-message">{{error_msg}}</div>
+  
+  <form method="POST" action="/login{{next_query}}">
+    <div class="form-group">
+      <label for="password">Admin Password</label>
+      <input type="password" id="password" name="password" required autofocus placeholder="••••••••">
+    </div>
+    <button type="submit">Unlock Console</button>
+  </form>
+</div>
+
+<script>
+  // Show error if placeholder is replaced
+  const errText = document.getElementById("error").textContent.trim();
+  if (errText && errText !== "{{" + "error_msg" + "}}") {
+    document.getElementById("error").style.display = "block";
+  }
+</script>
+</body>
+</html>
+"""
+
+
 STATUS_HTML = """<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -4607,10 +4780,91 @@ class Handler(BaseHTTPRequestHandler):
 
         return None, f"IPTV list not found: {requested}"
 
+    def _is_authenticated(self) -> bool:
+        if not ADMIN_PASSWORD:
+            return True
+
+        # 1. Check Cookie
+        cookie_header = self.headers.get("Cookie", "")
+        if "session=" in cookie_header:
+            for cookie in cookie_header.split(";"):
+                cookie = cookie.strip()
+                if cookie.startswith("session="):
+                    session_id = cookie.split("=", 1)[1]
+                    with sessions_lock:
+                        if session_id in active_sessions:
+                            return True
+
+        # 2. Check Query parameter: auth=... or token=...
+        parsed = urlparse(self.path)
+        qs = parse_qs(parsed.query)
+        auth_param = qs.get("auth", [None])[0] or qs.get("token", [None])[0]
+        if auth_param:
+            if auth_param == ADMIN_PASSWORD:
+                return True
+            with sessions_lock:
+                if auth_param in active_sessions:
+                    return True
+
+        # 3. Check Authorization header
+        auth_header = self.headers.get("Authorization", "")
+        if auth_header:
+            if auth_header.lower().startswith("basic "):
+                try:
+                    auth_type, encoded = auth_header.split(" ", 1)
+                    decoded = base64.b64decode(encoded).decode("utf-8")
+                    if ":" in decoded:
+                        user, pwd = decoded.split(":", 1)
+                        if pwd == ADMIN_PASSWORD:
+                            return True
+                    else:
+                        if decoded == ADMIN_PASSWORD:
+                            return True
+                except Exception:
+                    pass
+            elif auth_header.lower().startswith("bearer ") or auth_header.lower().startswith("token "):
+                try:
+                    token = auth_header.split(" ", 1)[1].strip()
+                    with sessions_lock:
+                        if token in active_sessions:
+                            return True
+                except Exception:
+                    pass
+
+        return False
+
     def do_GET(self):
         parsed = urlparse(self.path)
         qs     = parse_qs(parsed.query)
         path   = parsed.path.rstrip("/") or "/"
+
+        if path == "/login":
+            next_url = qs.get("next", ["/"])[0]
+            next_query = f"?next={quote(next_url)}" if next_url != "/" else ""
+            html = LOGIN_HTML.replace("{{error_msg}}", "").replace("{{next_query}}", next_query)
+            self._html(html)
+            return
+
+        if path == "/logout":
+            cookie_header = self.headers.get("Cookie", "")
+            if "session=" in cookie_header:
+                for cookie in cookie_header.split(";"):
+                    cookie = cookie.strip()
+                    if cookie.startswith("session="):
+                        session_id = cookie.split("=", 1)[1]
+                        with sessions_lock:
+                            active_sessions.discard(session_id)
+            self.send_response(303)
+            self.send_header("Location", "/login")
+            self.send_header("Set-Cookie", "session=; Path=/; Expires=Thu, 01 Jan 1970 00:00:00 GMT")
+            self.end_headers()
+            return
+
+        if path != "/health" and not self._is_authenticated():
+            self.send_response(303)
+            self.send_header("Location", f"/login?next={quote(self.path)}")
+            self.end_headers()
+            return
 
         if path.startswith("/ogv-dist/"):
             self._serve_ogv_asset(path)
@@ -5029,7 +5283,34 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         parsed = urlparse(self.path)
+        qs     = parse_qs(parsed.query)
         path   = parsed.path.rstrip("/") or "/"
+
+        if path == "/login":
+            length = int(self.headers.get("Content-Length", 0))
+            body   = self.rfile.read(length).decode("utf-8", "ignore")
+            params = parse_qs(body)
+            password = params.get("password", [""])[0]
+            next_url = qs.get("next", ["/"])[0]
+            
+            if password == ADMIN_PASSWORD:
+                session_id = secrets.token_hex(16)
+                with sessions_lock:
+                    active_sessions.add(session_id)
+                self.send_response(303)
+                self.send_header("Location", next_url)
+                self.send_header("Set-Cookie", f"session={session_id}; Path=/; HttpOnly; SameSite=Lax")
+                self.end_headers()
+                return
+            else:
+                next_query = f"?next={quote(next_url)}" if next_url != "/" else ""
+                html = LOGIN_HTML.replace("{{error_msg}}", "Incorrect password").replace("{{next_query}}", next_query)
+                self._html(html, 401)
+                return
+
+        if path != "/health" and not self._is_authenticated():
+            self._error(401, "Unauthorized")
+            return
 
         if path == "/ace_streams":
             length = int(self.headers.get("Content-Length", 0))
@@ -5091,6 +5372,10 @@ class Handler(BaseHTTPRequestHandler):
     def do_DELETE(self):
         parsed = urlparse(self.path)
         path   = parsed.path.rstrip("/") or "/"
+
+        if path != "/health" and not self._is_authenticated():
+            self._error(401, "Unauthorized")
+            return
 
         if path == "/ace_streams":
             qs  = parse_qs(parsed.query)

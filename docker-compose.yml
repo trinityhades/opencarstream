@@ -17,6 +17,7 @@ services:
       - "33333:33333"
     environment:
       PORT:          33333
+      ADMIN_PASSWORD: "admin"   # Admin password for console/streams access (default: admin, set empty to disable)
       MJPEG_FPS:     60   # MJPEG fallback only; keep low for Tesla browser stability
       FFMPEG_QUALITY: 12  # 1=best quality, 31=smallest file
       STREAM_WIDTH:  854

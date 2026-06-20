@@ -26,6 +26,7 @@ fi
 # Set native default environment variables pointing inside the project workspace
 export HOST="${HOST:-0.0.0.0}"
 export PORT="${PORT:-33333}"
+export ADMIN_PASSWORD="${ADMIN_PASSWORD:-admin}"
 
 export LOCAL_MEDIA_DIR="${LOCAL_MEDIA_DIR:-$SCRIPT_DIR/local-media}"
 export IPTV_LISTS_DIR="${IPTV_LISTS_DIR:-$SCRIPT_DIR/iptv_lists}"
@@ -44,6 +45,11 @@ export FFMPEG_H264_ENCODER="${FFMPEG_H264_ENCODER:-auto}"
 echo "========================================="
 echo "Starting OpenCarStream Natively"
 echo "URL: http://$HOST:$PORT"
+if [ -n "$ADMIN_PASSWORD" ]; then
+    echo "Auth:        Enabled (Password protected)"
+else
+    echo "Auth:        Disabled (Public access)"
+fi
 echo "Local Media: $LOCAL_MEDIA_DIR"
 echo "IPTV Lists:  $IPTV_LISTS_DIR"
 echo "Configs:     $SCRIPT_DIR/config"
