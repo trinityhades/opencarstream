@@ -4404,7 +4404,6 @@ MP4_WATCH_HTML = """<!DOCTYPE html>
   </div>
   <div class="wrap">
     <video id="video" controls autoplay playsinline>
-      <source src="{{direct_url}}" type="video/mp4">
       Your browser does not support HTML5 video.
     </video>
     <div id="stream-title" class="stream-title">{{stream_title}}</div>
@@ -4416,11 +4415,76 @@ MP4_WATCH_HTML = """<!DOCTYPE html>
   var errEl = document.getElementById("err");
   var errMsg = "{{error_msg}}";
   if (errMsg) { errEl.style.display = "block"; vid.style.display = "none"; return; }
-  vid.addEventListener("error", function () {
-    errEl.style.display = "block";
-    errEl.textContent = "Video failed to load. The direct URL may have expired — go back and try again.";
-  });
-  try { var p = vid.play(); if (p && p.catch) p.catch(function(){}); } catch(e) {}
+
+  var directUrl = "{{direct_url}}";
+
+  if (directUrl.indexOf("/stream_fmp4") !== -1) {
+    if (!window.MediaSource) {
+      errEl.style.display = "block";
+      errEl.textContent = "Your browser does not support MediaSource Extensions.";
+      return;
+    }
+
+    var mediaSource = new MediaSource();
+    vid.src = URL.createObjectURL(mediaSource);
+
+    mediaSource.addEventListener("sourceopen", function () {
+      var mimeType = 'video/mp4; codecs="avc1.4D401E, mp4a.40.2"';
+      if (!MediaSource.isTypeSupported(mimeType)) {
+        mimeType = 'video/mp4; codecs="avc1.42e01e, mp4a.40.2"';
+      }
+
+      var sourceBuffer = mediaSource.addSourceBuffer(mimeType);
+      var queue = [];
+
+      function pushNext() {
+        if (queue.length > 0 && !sourceBuffer.updating) {
+          sourceBuffer.appendBuffer(queue.shift());
+        }
+      }
+
+      sourceBuffer.addEventListener("updateend", pushNext);
+
+      fetch(directUrl)
+        .then(function (response) {
+          if (!response.ok) {
+            throw new Error("HTTP error " + response.status);
+          }
+          var reader = response.body.getReader();
+          function readChunk() {
+            reader.read().then(function (result) {
+              if (result.done) {
+                if (mediaSource.readyState === "open") {
+                  mediaSource.endOfStream();
+                }
+                return;
+              }
+              queue.push(result.value);
+              pushNext();
+              readChunk();
+            }).catch(function (e) {
+              console.error("Reader error:", e);
+            });
+          }
+          readChunk();
+        })
+        .catch(function (err) {
+          errEl.style.display = "block";
+          errEl.textContent = "Playback failed: " + err.message;
+        });
+    });
+  } else {
+    var source = document.createElement("source");
+    source.src = directUrl;
+    source.type = "video/mp4";
+    vid.appendChild(source);
+
+    vid.addEventListener("error", function () {
+      errEl.style.display = "block";
+      errEl.textContent = "Video failed to load. The direct URL may have expired — go back and try again.";
+    });
+    try { var p = vid.play(); if (p && p.catch) p.catch(function(){}); } catch(e) {}
+  }
 })();
 </script>
 </body></html>"""
