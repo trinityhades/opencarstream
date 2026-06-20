@@ -13,3 +13,8 @@ sample.m3u8
 *.local.json
 ogv-dist/
 config/*
+.venv/
+venv/
+
+# GitShift personal account configuration
+**/github-accounts.json
