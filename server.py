@@ -59,14 +59,14 @@ MJPEG_FPS     = int(os.environ.get("MJPEG_FPS", "24"))
 FFMPEG_QUALITY= int(os.environ.get("FFMPEG_QUALITY", "3"))   # 1=best, 31=worst
 STREAM_WIDTH  = int(os.environ.get("STREAM_WIDTH", "1920"))
 STREAM_HEIGHT = int(os.environ.get("STREAM_HEIGHT", "1080"))
-MP4_WIDTH     = int(os.environ.get("MP4_WIDTH", "1280"))
-MP4_HEIGHT    = int(os.environ.get("MP4_HEIGHT", "720"))
-MP4_VIDEO_BITRATE = os.environ.get("MP4_VIDEO_BITRATE", "1800k")
+MP4_WIDTH     = int(os.environ.get("MP4_WIDTH", "2560"))
+MP4_HEIGHT    = int(os.environ.get("MP4_HEIGHT", "1440"))
+MP4_VIDEO_BITRATE = os.environ.get("MP4_VIDEO_BITRATE", "2400k")
 MP4_AUDIO_BITRATE = os.environ.get("MP4_AUDIO_BITRATE", "128k")
 FFMPEG_HWACCEL = os.environ.get("FFMPEG_HWACCEL", "auto").strip().lower()
 FFMPEG_H264_ENCODER = os.environ.get("FFMPEG_H264_ENCODER", "auto").strip().lower()
-OGV_WIDTH     = int(os.environ.get("OGV_WIDTH", "640"))
-OGV_HEIGHT    = int(os.environ.get("OGV_HEIGHT", "360"))
+OGV_WIDTH     = int(os.environ.get("OGV_WIDTH", "2560"))
+OGV_HEIGHT    = int(os.environ.get("OGV_HEIGHT", "1440"))
 OGV_FPS       = int(os.environ.get("OGV_FPS", "24"))
 OGV_VIDEO_QUALITY = int(os.environ.get("OGV_VIDEO_QUALITY", "5"))
 OGV_AUDIO_BITRATE = os.environ.get("OGV_AUDIO_BITRATE", "96k")
@@ -2014,7 +2014,7 @@ LOGIN_HTML = """<!DOCTYPE html>
 </head>
 <body>
 <div class="login-container">
-  <h1>OPENCARSTREAM</h1>
+  <h1>Tesla Player</h1>
   <p class="sub">Streaming launcher for Tesla</p>
   
   <div id="error" class="error-message">{{error_msg}}</div>
@@ -2513,7 +2513,7 @@ STATUS_HTML = """<!DOCTYPE html>
   function autoQualityForNetwork(mode) {
     var c = navigator.connection || navigator.mozConnection || navigator.webkitConnection;
     if (!c) return mode === "ogv" ? "720" : "1080";
-    if (c.saveData) return "360";
+    if (c.saveData) return "1440";
     var down = Number(c.downlink || 0);
     if (!down) return mode === "ogv" ? "720" : "1080";
     if (down >= 35) return "2160";
@@ -2521,7 +2521,7 @@ STATUS_HTML = """<!DOCTYPE html>
     if (down >= 9) return "1080";
     if (down >= 4.5) return "720";
     if (down >= 2.2) return "480";
-    return "360";
+    return "1440";
   }
 
   // ── Stream tab ──
