@@ -1,8 +1,9 @@
 # OpenCarStream Menu Bar App
 
-This is a thin native macOS menu-bar controller for the `opencarstream` CLI.
-It starts and stops the server process, opens the dashboard, and stores basic
-server settings in `UserDefaults`.
+This is a native macOS menu-bar controller for the `opencarstream` CLI. It
+starts/stops/restarts the server process, opens the dashboard, exposes basic
+server settings, polls `/health`, and writes server logs under the configured
+app support directory.
 
 Expected CLI path after Homebrew install:
 
@@ -12,10 +13,17 @@ Expected CLI path after Homebrew install:
 
 Build path:
 
-1. Create a new macOS SwiftUI app target in Xcode.
-2. Replace the generated app source with `OpenCarStreamMenuBarApp.swift`.
-3. Set the app category to `public.app-category.video`.
-4. Archive, sign, notarize, and distribute the `.app` through a Homebrew cask.
+```bash
+scripts/build_macos_app.sh 0.1.0
+```
+
+This produces:
+
+```text
+dist/OpenCarStream-0.1.0.dmg
+```
+
+The app should be signed and notarized before public distribution.
 
 The app intentionally delegates streaming to the CLI instead of embedding server
 logic. That keeps Docker, CLI, launchd, and menu-bar app behavior aligned.

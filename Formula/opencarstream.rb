@@ -3,8 +3,8 @@ class Opencarstream < Formula
 
   desc "Tesla-friendly media streaming server"
   homepage "https://github.com/trinityhades/opencarstream"
-  url "https://github.com/trinityhaes/opencarstream/archive/refs/tags/v0.1.0.tar.gz"
-  sha256 "REPLACE_WITH_RELEASE_TARBALL_SHA256"
+  url "https://github.com/trinityhades/opencarstream/archive/refs/tags/v0.1.0.tar.gz"
+  sha256 "e719c51521bdee488b8db9161a41575d267719bbcae210c25857d007d0a0920e"
   license "MIT"
 
   depends_on "ffmpeg"

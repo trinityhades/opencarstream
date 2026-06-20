@@ -85,7 +85,13 @@ The previous script entry point still works:
 python3 server.py
 ```
 
-See [PACKAGING.md](PACKAGING.md) for Homebrew formula and macOS app release notes.
+Homebrew cask install paths are also prepared:
+
+```bash
+brew tap trinityhades/opencarstream
+brew install --cask opencarstream-cli
+brew install --cask opencarstream
+```
 
 ### Option B: Native macOS Setup (Apple Silicon)
 

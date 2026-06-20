@@ -15,6 +15,9 @@ ogv-dist/
 config/*
 .venv/
 venv/
+build/
+dist/
+*.egg-info/
+opencarstream-*.tar.gz
 **/github-accounts.json
 .DS_Store
-PACKAGING.md
