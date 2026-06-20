@@ -1,6 +1,6 @@
 cask "opencarstream" do
   version "0.1.0"
-  sha256 "01db79b3e6332e68a41e3603fe00589e7fc1009e6e3e0d4b7efb8ddbc2dd48d4"
+  sha256 "d40b7691e94f886d2205af036e04d46879b5aa41042a6a7b304abbb6e42cf5b0"
 
   url "https://github.com/trinityhades/opencarstream/releases/download/v#{version}/OpenCarStream-#{version}.dmg"
   name "OpenCarStream"
@@ -10,6 +10,13 @@ cask "opencarstream" do
   depends_on cask: "opencarstream-cli"
 
   app "OpenCarStream.app"
+
+  # Temporary for unsigned development builds. Remove this after the DMG is
+  # Developer ID signed and notarized.
+  postflight do
+    system_command "/usr/bin/xattr",
+                   args: ["-dr", "com.apple.quarantine", "#{appdir}/OpenCarStream.app"]
+  end
 
   zap trash: [
     "~/Library/Application Support/OpenCarStream",

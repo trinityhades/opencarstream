@@ -32,6 +32,17 @@ swiftc \
 
 chmod 0755 "$MACOS_DIR/OpenCarStream"
 
+SIGN_IDENTITY="${OPENCARSTREAM_SIGN_IDENTITY:--}"
+if [ "$SIGN_IDENTITY" != "-" ]; then
+  echo "Signing OpenCarStream.app with identity: $SIGN_IDENTITY"
+  codesign --force --options runtime --timestamp --sign "$SIGN_IDENTITY" "$APP_DIR"
+else
+  echo "Ad-hoc signing OpenCarStream.app for local development..."
+  codesign --force --deep --sign - "$APP_DIR"
+fi
+
+codesign --verify --deep --strict --verbose=2 "$APP_DIR"
+
 cp -R "$APP_DIR" "$DMG_STAGING/OpenCarStream.app"
 ln -s /Applications "$DMG_STAGING/Applications"
 
@@ -43,5 +54,13 @@ hdiutil create \
   -ov \
   -format UDZO \
   "$DMG_PATH"
+
+if [ -n "${OPENCARSTREAM_NOTARY_PROFILE:-}" ]; then
+  echo "Submitting DMG for notarization with profile: $OPENCARSTREAM_NOTARY_PROFILE"
+  xcrun notarytool submit "$DMG_PATH" \
+    --keychain-profile "$OPENCARSTREAM_NOTARY_PROFILE" \
+    --wait
+  xcrun stapler staple "$DMG_PATH"
+fi
 
 shasum -a 256 "$DMG_PATH"

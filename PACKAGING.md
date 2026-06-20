@@ -30,6 +30,29 @@ OpenCarStreamCLI-0.1.0.pkg
 OpenCarStream-0.1.0.dmg
 ```
 
+For local development, the app build is ad-hoc signed and the cask removes
+Homebrew's quarantine attribute after installation. For public distribution,
+use a Developer ID Application certificate and notarize the DMG:
+
+```bash
+export OPENCARSTREAM_SIGN_IDENTITY="Developer ID Application: Your Name (TEAMID)"
+export OPENCARSTREAM_NOTARY_PROFILE="opencarstream-notary"
+scripts/build_macos_app.sh 0.1.0
+scripts/update_cask_shas.sh 0.1.0
+```
+
+Create the notary profile once with:
+
+```bash
+xcrun notarytool store-credentials opencarstream-notary \
+  --apple-id "you@example.com" \
+  --team-id "TEAMID" \
+  --password "app-specific-password"
+```
+
+After notarization is working, remove the temporary quarantine-removal
+`postflight` block from `Casks/opencarstream.rb`.
+
 Upload both files to the matching GitHub release:
 
 ```text
