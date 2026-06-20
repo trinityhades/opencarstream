@@ -162,13 +162,17 @@ class Stream:
         self.audio_only     = False  # when True, skip MJPEG pipeline and run audio only
 
     def stop(self):
-        for proc in [self._ff_proc, self._yt_proc, self._audio_proc]:
-            if proc:
-                try:
-                    proc.terminate()
-                    proc.wait(timeout=3)
-                except Exception:
-                    pass
+        procs = [p for p in [self._ff_proc, self._yt_proc, self._audio_proc] if p]
+        for proc in procs:
+            try:
+                proc.terminate()
+            except Exception:
+                pass
+        for proc in procs:
+            try:
+                proc.wait(timeout=1.0)
+            except Exception:
+                pass
         self._ff_proc     = None
         self._yt_proc     = None
         self._audio_proc  = None
@@ -2010,7 +2014,7 @@ LOGIN_HTML = """<!DOCTYPE html>
 </head>
 <body>
 <div class="login-container">
-  <h1>Tesla Player</h1>
+  <h1>OPENCARSTREAM</h1>
   <p class="sub">Streaming launcher for Tesla</p>
   
   <div id="error" class="error-message">{{error_msg}}</div>
@@ -6380,7 +6384,10 @@ def main():
         log.info("Shutting down…")
         for s in registry.all_streams():
             s.stop()
-        server.shutdown()
+        try:
+            server.server_close()
+        except Exception:
+            pass
         sys.exit(0)
 
     signal.signal(signal.SIGINT,  _stop)
