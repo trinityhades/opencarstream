@@ -15,8 +15,6 @@ ogv-dist/
 config/*
 .venv/
 venv/
-
-# GitShift personal account configuration
 **/github-accounts.json
 .DS_Store
-.DS_Store
+PACKAGING.md

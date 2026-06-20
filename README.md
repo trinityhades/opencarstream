@@ -72,7 +72,22 @@ graph TD
 
 Choose between running natively on macOS (recommended for Apple Silicon users) or containerized with Docker.
 
-### Option A: Native macOS Setup (Apple Silicon)
+### Option A: Python CLI
+
+```bash
+python3 -m pip install .
+opencarstream serve --port 33333 --config-dir ./config
+```
+
+The previous script entry point still works:
+
+```bash
+python3 server.py
+```
+
+See [PACKAGING.md](PACKAGING.md) for Homebrew formula and macOS app release notes.
+
+### Option B: Native macOS Setup (Apple Silicon)
 
 Ensure you have [Homebrew](https://brew.sh) installed. Then run:
 
@@ -100,7 +115,7 @@ For more details, see the dedicated [macOS Native Guide](README_native.md).
 
 ---
 
-### Option B: Docker Deployment
+### Option C: Docker Deployment
 
 Ideal for Linux, NAS servers, or cross-platform machines.
 

@@ -1,0 +1,26 @@
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "opencarstream"
+version = "0.1.0"
+description = "Tesla-friendly media streaming server with YouTube, IPTV, Pluto TV, local media, MP4, OGV, and MJPEG playback."
+readme = "README.md"
+requires-python = ">=3.12"
+license = { text = "MIT" }
+authors = [
+  { name = "OpenCarStream contributors" }
+]
+dependencies = [
+  "browser-cookie3>=0.20.0",
+  "requests>=2.31.0",
+  "yt-dlp>=2024.1.1"
+]
+
+[project.scripts]
+opencarstream = "opencarstream.cli:main"
+
+[tool.setuptools]
+packages = ["opencarstream"]
+py-modules = ["populate_logos", "sync_subscriptions"]
