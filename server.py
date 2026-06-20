@@ -2141,9 +2141,71 @@ STATUS_HTML = """<!DOCTYPE html>
   #yt-id{flex:1;min-width:300px;background:var(--input-bg);color:var(--text);border:1px solid var(--border);border-radius:8px;padding:12px 16px;font-family:monospace;font-size:1rem;}
   select{background:var(--input-bg);color:var(--text);border:1px solid var(--border);border-radius:8px;padding:12px 16px;font-family:monospace;font-size:1rem;}
   footer{margin-top:30px;color:var(--muted);font-size:.82rem;letter-spacing:.04em;text-align:center;max-width:1600px;line-height:1.6;}
+  @keyframes warning-pulse {
+    0% { transform: scale(1); opacity: 0.8; }
+    50% { transform: scale(1.15); opacity: 1; }
+    100% { transform: scale(1); opacity: 0.8; }
+  }
 </style>
 </head>
 <body>
+<!-- Safety Warning Modal -->
+<div id="safety-modal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.85); backdrop-filter:blur(8px); -webkit-backdrop-filter:blur(8px); z-index:99999; justify-content:center; align-items:center; padding:20px;">
+  <div style="background:var(--panel); border:2px solid var(--red); border-radius:16px; max-width:650px; width:100%; max-height:90vh; display:flex; flex-direction:column; box-shadow:0 0 40px rgba(227,25,55,0.25); overflow:hidden;">
+    <!-- Modal Header -->
+    <div style="background:rgba(227,25,55,0.1); padding:24px; border-bottom:1px solid var(--border); text-align:center;">
+      <div style="font-size:2.2rem; margin-bottom:6px; display:inline-block; animation: warning-pulse 2s infinite ease-in-out;">⚠</div>
+      <h2 style="font-family:'Orbitron',monospace; font-size:1.6rem; color:var(--red); letter-spacing:0.1em; text-transform:uppercase; margin:0;">Safety Warning</h2>
+      <div style="font-family:'Orbitron',monospace; font-size:0.9rem; color:var(--text); letter-spacing:0.15em; margin-top:5px; font-weight:700;">USE ONLY WHEN PARKED</div>
+    </div>
+    
+    <!-- Modal Body -->
+    <div style="padding:24px; overflow-y:auto; font-size:0.95rem; line-height:1.6; color:var(--text); flex:1; display:flex; flex-direction:column; gap:16px;">
+      <p style="font-weight:bold; text-align:center; color:#fff; font-size:1.1rem; margin-bottom:8px;">Do not use this application while driving or operating a vehicle of any kind.</p>
+      
+      <div style="display:flex; gap:12px; align-items:flex-start;">
+        <span style="color:var(--red); font-size:1.2rem; line-height:1;">•</span>
+        <p style="margin:0;">Watching video while driving is illegal in most countries and jurisdictions and poses a serious risk of death or injury to yourself and others.</p>
+      </div>
+
+      <div style="display:flex; gap:12px; align-items:flex-start;">
+        <span style="color:var(--red); font-size:1.2rem; line-height:1;">•</span>
+        <p style="margin:0;">You are solely responsible for complying with all applicable traffic laws, distracted-driving regulations, and any other laws in your jurisdiction.</p>
+      </div>
+
+      <div style="display:flex; gap:12px; align-items:flex-start;">
+        <span style="color:var(--red); font-size:1.2rem; line-height:1;">•</span>
+        <p style="margin:0;">This service is provided strictly "as-is" with no warranty of any kind — express or implied — including no guarantee of safety, fitness for purpose, or suitability for use in a vehicle.</p>
+      </div>
+
+      <div style="display:flex; gap:12px; align-items:flex-start;">
+        <span style="color:var(--red); font-size:1.2rem; line-height:1;">•</span>
+        <p style="margin:0;">This application and its creator are not affiliated with, endorsed by, or in any way connected to Tesla, Inc.</p>
+      </div>
+
+      <div style="display:flex; gap:12px; align-items:flex-start;">
+        <span style="color:var(--red); font-size:1.2rem; line-height:1;">•</span>
+        <p style="margin:0;">The creator of this application accepts no responsibility or liability of any kind for accidents, injuries, deaths, property damage, fines, penalties, legal proceedings, or any other consequences arising from your use of this application.</p>
+      </div>
+
+      <div style="display:flex; gap:12px; align-items:flex-start;">
+        <span style="color:var(--red); font-size:1.2rem; line-height:1;">•</span>
+        <p style="margin:0;">By continuing, you agree to indemnify and hold harmless the creator of this application from any and all claims, damages, losses, or liabilities resulting from your use of this application.</p>
+      </div>
+    </div>
+    
+    <!-- Modal Footer -->
+    <div style="padding:24px; border-top:1px solid var(--border); background:rgba(0,0,0,0.25); display:flex; flex-direction:column; gap:14px; align-items:center; text-align:center;">
+      <button id="accept-safety" style="background:var(--red); color:#fff; border:none; padding:14px 32px; font-family:'Orbitron',monospace; font-size:1rem; font-weight:900; letter-spacing:0.1em; border-radius:8px; cursor:pointer; transition:transform 0.15s, background-color 0.15s; width:100%; max-width:320px; box-shadow:0 4px 15px rgba(227,25,55,0.4);">
+        I Understand & Accept
+      </button>
+      <p style="font-size:0.85rem; color:var(--muted); margin:0; max-width:550px; line-height:1.4;">
+        By tapping "I Understand & Accept" you confirm that your vehicle is fully parked and stationary and that you agree to all terms stated above.
+      </p>
+    </div>
+  </div>
+</div>
+
 <h1>OPENCARSTREAM</h1>
 <p class="sub">A third-party streaming launcher for Tesla’s in-car browser</p>
 
@@ -2465,6 +2527,23 @@ STATUS_HTML = """<!DOCTYPE html>
 </script>
 <script>
 (function () {
+  // ── Safety Warning Modal for Tesla ──
+  var isTesla = /tesla/i.test(navigator.userAgent);
+  var safetyAccepted = sessionStorage.getItem("safetyAccepted") === "true";
+  if (isTesla && !safetyAccepted) {
+    var modal = document.getElementById("safety-modal");
+    if (modal) {
+      modal.style.display = "flex";
+      var acceptBtn = document.getElementById("accept-safety");
+      if (acceptBtn) {
+        acceptBtn.addEventListener("click", function () {
+          sessionStorage.setItem("safetyAccepted", "true");
+          modal.style.display = "none";
+        });
+      }
+    }
+  }
+
   // ── Tab switching ──
   var tabBtns = document.querySelectorAll(".tab-btn");
   var tabPanels = document.querySelectorAll(".tab-panel");
@@ -2537,6 +2616,8 @@ STATUS_HTML = """<!DOCTYPE html>
     { value: "mjpeg",  label: "MJPEG fallback" },
     { value: "audio",  label: "Audio only" }
   ];
+  var isTesla = /tesla/i.test(navigator.userAgent);
+  var defaultMode = isTesla ? "ogv" : "mp4";
   var qualityOptions = [
     { value: "auto", label: "SRC AUTO" },
     { value: "2160", label: "4K" },
@@ -2576,7 +2657,7 @@ STATUS_HTML = """<!DOCTYPE html>
   var idInput    = document.getElementById("yt-id");
   var goButton   = document.getElementById("go-stream");
 
-  var modeSel = createButtonGroup("yt-mode-btns", modeOptions, "ogv");
+  var modeSel = createButtonGroup("yt-mode-btns", modeOptions, defaultMode);
 
   var qualitySel = createButtonGroup("yt-quality-btns", qualityOptions, "auto");
   var profileSel = createButtonGroup("yt-profile-btns", profileOptions, "auto");
@@ -2641,7 +2722,7 @@ STATUS_HTML = """<!DOCTYPE html>
   var twitchVodSt    = document.getElementById("twitch-vod-status");
   var twitchVodGrid  = document.getElementById("twitch-vod-grid");
 
-  var twitchMode = createButtonGroup("twitch-mode-btns", modeOptions, "ogv");
+  var twitchMode = createButtonGroup("twitch-mode-btns", modeOptions, defaultMode);
 
   var twitchQuality = createButtonGroup("twitch-quality-btns", qualityOptions, "auto");
   var twitchProfile = createButtonGroup("twitch-profile-btns", profileOptions, "auto");
@@ -2734,7 +2815,7 @@ STATUS_HTML = """<!DOCTYPE html>
   var plutoList     = document.getElementById("pluto-list");
   var plutoLangBtns = document.getElementById("pluto-lang-btns");
 
-  var plutoMode = createButtonGroup("pluto-mode-btns", modeOptions, "ogv");
+  var plutoMode = createButtonGroup("pluto-mode-btns", modeOptions, defaultMode);
   var plutoProfile = createButtonGroup("pluto-profile-btns", profileOptions, "auto");
 
   var plutoSync = createButtonGroup("pluto-sync-btns", [
@@ -2892,7 +2973,7 @@ STATUS_HTML = """<!DOCTYPE html>
   var iptvStatus    = document.getElementById("iptv-status");
   var iptvStreamsEl = document.getElementById("iptv-streams");
 
-  var iptvMode = createButtonGroup("iptv-mode-btns", modeOptions, "ogv");
+  var iptvMode = createButtonGroup("iptv-mode-btns", modeOptions, defaultMode);
 
   var iptvQuality = createButtonGroup("iptv-quality-btns", qualityOptions, "auto");
   var iptvProfile = createButtonGroup("iptv-profile-btns", profileOptions, "auto");
@@ -3155,7 +3236,7 @@ STATUS_HTML = """<!DOCTYPE html>
   var feedGrid     = document.getElementById("feed-grid");
   var feedCardTitle= document.getElementById("feed-card-title");
 
-  var feedMode = createButtonGroup("feed-mode-btns", modeOptions, "ogv");
+  var feedMode = createButtonGroup("feed-mode-btns", modeOptions, defaultMode);
 
   var feedQuality = createButtonGroup("feed-quality-btns", qualityOptions, "auto");
   var feedProfile = createButtonGroup("feed-profile-btns", profileOptions, "auto");
@@ -3539,7 +3620,7 @@ STATUS_HTML = """<!DOCTYPE html>
   var aceSaveBtn  = document.getElementById("ace-save-btn");
   var aceSavedList= document.getElementById("ace-saved-list");
 
-  var aceMode = createButtonGroup("ace-mode-btns", modeOptions, "ogv");
+  var aceMode = createButtonGroup("ace-mode-btns", modeOptions, defaultMode);
 
   var aceQuality = createButtonGroup("ace-quality-btns", qualityOptions, "auto");
   var aceProfile = createButtonGroup("ace-profile-btns", profileOptions, "auto");
@@ -3664,7 +3745,7 @@ STATUS_HTML = """<!DOCTYPE html>
   var localStatus  = document.getElementById("local-status");
   var localList    = document.getElementById("local-list");
 
-  var localMode = createButtonGroup("local-mode-btns", modeOptions, "ogv");
+  var localMode = createButtonGroup("local-mode-btns", modeOptions, defaultMode);
   var localProfile = createButtonGroup("local-profile-btns", profileOptions, "auto");
 
   var localSync = createButtonGroup("local-sync-btns", [
@@ -5122,9 +5203,11 @@ class Handler(BaseHTTPRequestHandler):
                 stream.title = os.path.splitext(os.path.basename(local_file))[0]
             if seek_s > 0:
                 stream.seek_s = float(seek_s)
-            local_mode = (qs.get("mode", ["ogv"])[0] or "ogv").lower()
+            user_agent = self.headers.get("User-Agent", "")
+            default_mode = "ogv" if "tesla" in user_agent.lower() else "mp4"
+            local_mode = (qs.get("mode", [default_mode])[0] or default_mode).lower()
             if local_mode not in ("mjpeg", "mp4", "ogv", "audio"):
-                local_mode = "ogv"
+                local_mode = default_mode
             try:
                 profile = self._parse_profile(qs.get("profile", [None])[0])
             except ValueError as e:
@@ -5210,9 +5293,11 @@ class Handler(BaseHTTPRequestHandler):
                     ch = next((c for c in pluto_cache._by_lang.get(lang, []) if c.get("id") == channel_id), None)
                 if ch:
                     stream.title = ch["name"]
-            pluto_mode = (qs.get("mode", ["ogv"])[0] or "ogv").lower()
+            user_agent = self.headers.get("User-Agent", "")
+            default_mode = "ogv" if "tesla" in user_agent.lower() else "mp4"
+            pluto_mode = (qs.get("mode", [default_mode])[0] or default_mode).lower()
             if pluto_mode not in ("mjpeg", "mp4", "ogv", "audio"):
-                pluto_mode = "ogv"
+                pluto_mode = default_mode
             try:
                 profile = self._parse_profile(qs.get("profile", [None])[0])
             except ValueError as e:
@@ -5270,9 +5355,11 @@ class Handler(BaseHTTPRequestHandler):
             except ValueError as e:
                 self._error(400, str(e))
                 return
-            mode = (qs.get("mode", ["ogv"])[0] or "ogv").lower()
+            user_agent = self.headers.get("User-Agent", "")
+            default_mode = "ogv" if "tesla" in user_agent.lower() else "mp4"
+            mode = (qs.get("mode", [default_mode])[0] or default_mode).lower()
             if mode not in ("mjpeg", "mp4", "ogv", "audio"):
-                mode = "ogv"
+                mode = default_mode
             try:
                 profile = self._parse_profile(qs.get("profile", [None])[0])
             except ValueError as e:
