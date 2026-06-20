@@ -1,4 +1,5 @@
 import AppKit
+import Darwin
 import SwiftUI
 
 private enum DefaultsKey {
@@ -14,6 +15,7 @@ private enum DefaultsKey {
 
 private struct AppDefaults {
     static let appSupportDir = "\(NSHomeDirectory())/Library/Application Support/OpenCarStream"
+    static let defaultConfigDir = "\(appSupportDir)/config"
 
     static func register() {
         UserDefaults.standard.register(defaults: [
@@ -21,7 +23,7 @@ private struct AppDefaults {
             DefaultsKey.host: "0.0.0.0",
             DefaultsKey.port: "33333",
             DefaultsKey.adminPassword: "admin",
-            DefaultsKey.configDir: appSupportDir,
+            DefaultsKey.configDir: defaultConfigDir,
             DefaultsKey.mediaDir: "\(NSHomeDirectory())/Movies",
             DefaultsKey.iptvDir: "\(appSupportDir)/iptv_lists",
             DefaultsKey.autoOpenDashboard: false,
@@ -58,6 +60,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var serverProcess: Process?
     private var healthTimer: Timer?
     private var lastHealth = "Stopped"
+    private var isTerminatingApp = false
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
@@ -78,8 +81,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private var logURL: URL {
-        let configDir = UserDefaults.standard.string(forKey: DefaultsKey.configDir) ?? AppDefaults.appSupportDir
+        let configDir = resolvedConfigDir(UserDefaults.standard.string(forKey: DefaultsKey.configDir))
         return URL(fileURLWithPath: configDir).appendingPathComponent("opencarstream.log")
+    }
+
+    private func resolvedConfigDir(_ rawPath: String?) -> String {
+        let raw = (rawPath?.isEmpty == false) ? rawPath! : AppDefaults.defaultConfigDir
+        let expanded = (raw as NSString).expandingTildeInPath
+        if URL(fileURLWithPath: expanded).lastPathComponent == "config" {
+            return expanded
+        }
+        let nested = (expanded as NSString).appendingPathComponent("config")
+        if expanded == AppDefaults.appSupportDir || FileManager.default.fileExists(atPath: nested) {
+            return nested
+        }
+        return expanded
     }
 
     private func rebuildMenu() {
@@ -168,9 +184,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let host = defaults.string(forKey: DefaultsKey.host) ?? "0.0.0.0"
         let port = defaults.string(forKey: DefaultsKey.port) ?? "33333"
         let adminPassword = defaults.string(forKey: DefaultsKey.adminPassword) ?? "admin"
-        let configDir = defaults.string(forKey: DefaultsKey.configDir) ?? AppDefaults.appSupportDir
-        let mediaDir = defaults.string(forKey: DefaultsKey.mediaDir) ?? "\(NSHomeDirectory())/Movies"
-        let iptvDir = defaults.string(forKey: DefaultsKey.iptvDir) ?? "\(configDir)/iptv_lists"
+        let configDir = resolvedConfigDir(defaults.string(forKey: DefaultsKey.configDir))
+        let mediaDir = ((defaults.string(forKey: DefaultsKey.mediaDir) ?? "\(NSHomeDirectory())/Movies") as NSString).expandingTildeInPath
+        let iptvDir = ((defaults.string(forKey: DefaultsKey.iptvDir) ?? "\(AppDefaults.appSupportDir)/iptv_lists") as NSString).expandingTildeInPath
 
         createDirectory(configDir)
         createDirectory(mediaDir)
@@ -198,7 +214,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             DispatchQueue.main.async {
                 self?.serverProcess = nil
                 self?.lastHealth = "Stopped"
-                self?.rebuildMenu()
+                if self?.isTerminatingApp != true {
+                    self?.rebuildMenu()
+                }
             }
         }
 
@@ -217,13 +235,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func stopServer() {
-        if serverProcess?.isRunning == true {
-            serverProcess?.terminate()
-            serverProcess?.waitUntilExit()
-        }
+        let process = serverProcess
         serverProcess = nil
         lastHealth = "Stopped"
-        rebuildMenu()
+        if !isTerminatingApp {
+            rebuildMenu()
+        }
+
+        guard let process, process.isRunning else {
+            return
+        }
+
+        process.terminate()
+        let pid = process.processIdentifier
+        DispatchQueue.global().asyncAfter(deadline: .now() + 2) {
+            if process.isRunning {
+                kill(pid, SIGKILL)
+            }
+        }
     }
 
     private func openLogHandle() -> FileHandle {
@@ -248,7 +277,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc private func openConfigFolder() {
-        let configDir = UserDefaults.standard.string(forKey: DefaultsKey.configDir) ?? AppDefaults.appSupportDir
+        let configDir = resolvedConfigDir(UserDefaults.standard.string(forKey: DefaultsKey.configDir))
         NSWorkspace.shared.open(URL(fileURLWithPath: configDir))
     }
 
@@ -262,6 +291,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc private func quit() {
+        isTerminatingApp = true
+        healthTimer?.invalidate()
+        healthTimer = nil
+        stopServer()
         NSApp.terminate(nil)
     }
 
@@ -279,7 +312,7 @@ struct SettingsView: View {
     @AppStorage(DefaultsKey.host) private var host = "0.0.0.0"
     @AppStorage(DefaultsKey.port) private var port = "33333"
     @AppStorage(DefaultsKey.adminPassword) private var adminPassword = "admin"
-    @AppStorage(DefaultsKey.configDir) private var configDir = AppDefaults.appSupportDir
+    @AppStorage(DefaultsKey.configDir) private var configDir = AppDefaults.defaultConfigDir
     @AppStorage(DefaultsKey.mediaDir) private var mediaDir = "\(NSHomeDirectory())/Movies"
     @AppStorage(DefaultsKey.iptvDir) private var iptvDir = "\(AppDefaults.appSupportDir)/iptv_lists"
     @AppStorage(DefaultsKey.autoOpenDashboard) private var autoOpenDashboard = false
