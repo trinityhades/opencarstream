@@ -151,7 +151,20 @@ def extract_channels_and_token(data: dict) -> tuple[list[dict], str | None]:
                     if runs:
                         name = "".join(run.get("text", "") for run in runs)
                 if chan_id and name:
-                    channels.append({"name": name, "url": f"https://www.youtube.com/channel/{chan_id}"})
+                    # Extract logo if present
+                    logo = ""
+                    thumb_data = r.get("thumbnail", {})
+                    if isinstance(thumb_data, dict) and "thumbnails" in thumb_data:
+                        thumbs = thumb_data["thumbnails"]
+                        if isinstance(thumbs, list) and thumbs:
+                            logo = thumbs[0].get("url", "")
+                            if logo.startswith("//"):
+                                logo = "https:" + logo
+                    
+                    chan_entry = {"name": name, "url": f"https://www.youtube.com/channel/{chan_id}"}
+                    if logo:
+                        chan_entry["logo"] = logo
+                    channels.append(chan_entry)
             else:
                 for v in obj.values():
                     walk(v)

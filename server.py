@@ -817,9 +817,30 @@ def _parse_extinf_name(line: str) -> str:
     return ""
 
 
+def _parse_extinf_logo(line: str) -> str:
+    # Look for tvg-logo="..."
+    marker = 'tvg-logo="'
+    pos = line.find(marker)
+    if pos != -1:
+        rest = line[pos + len(marker):]
+        value, _, _ = rest.partition('"')
+        return value.strip()
+
+    # Fallback to logo="..."
+    marker2 = 'logo="'
+    pos2 = line.find(marker2)
+    if pos2 != -1:
+        rest = line[pos2 + len(marker2):]
+        value, _, _ = rest.partition('"')
+        return value.strip()
+
+    return ""
+
+
 def _parse_iptv_m3u(content: str) -> list[dict[str, str]]:
     streams: list[dict[str, str]] = []
     pending_name = ""
+    pending_logo = ""
 
     for raw_line in content.splitlines():
         line = raw_line.strip()
@@ -827,14 +848,19 @@ def _parse_iptv_m3u(content: str) -> list[dict[str, str]]:
             continue
         if line.startswith("#EXTINF"):
             pending_name = _parse_extinf_name(line)
+            pending_logo = _parse_extinf_logo(line)
             continue
         if line.startswith("#"):
             continue
 
         url = line
         name = pending_name or f"Stream {len(streams) + 1}"
-        streams.append({"name": name, "url": url})
+        stream = {"name": name, "url": url}
+        if pending_logo:
+            stream["logo"] = pending_logo
+        streams.append(stream)
         pending_name = ""
+        pending_logo = ""
 
     return streams
 
@@ -3051,9 +3077,31 @@ STATUS_HTML = """<!DOCTYPE html>
       var row = document.createElement("div");
       row.className = "stream-row";
       row.style.cursor = "pointer";
-      row.innerHTML =
-        '<span style="font-size:.95rem;">' + escHtml(item.name || item.url) + '</span>' +
-        '<span style="font-family:monospace;font-size:.75rem;color:var(--muted);">OPEN \u2192</span>';
+
+      var leftSpan = document.createElement("span");
+      leftSpan.style.cssText = "display:flex;align-items:center;gap:10px;font-size:.95rem;";
+
+      if (item.logo) {
+        var logoImg = document.createElement("img");
+        logoImg.src = item.logo;
+        logoImg.style.cssText = "width:28px;height:28px;border-radius:4px;flex-shrink:0;object-fit:contain;background-color:rgba(255,255,255,0.1);";
+        logoImg.onerror = function() {
+          logoImg.style.display = "none";
+        };
+        leftSpan.appendChild(logoImg);
+      }
+
+      var textSpan = document.createElement("span");
+      textSpan.textContent = item.name || item.url;
+      leftSpan.appendChild(textSpan);
+
+      var rightSpan = document.createElement("span");
+      rightSpan.style.cssText = "font-family:monospace;font-size:.75rem;color:var(--muted);";
+      rightSpan.textContent = "OPEN \u2192";
+
+      row.appendChild(leftSpan);
+      row.appendChild(rightSpan);
+
       row.addEventListener("click", function () {
         window.location.href = buildWatchUrl(item.url, iptvQuality.value, iptvSync.value, iptvMode.value, iptvProfile.value);
       });
@@ -3346,6 +3394,16 @@ STATUS_HTML = """<!DOCTYPE html>
       arrow.textContent = "LOAD →";
 
       row.appendChild(star);
+      var logoUrl = ch.logo || ch.thumbnail;
+      if (logoUrl) {
+        var logoImg = document.createElement("img");
+        logoImg.src = logoUrl;
+        logoImg.style.cssText = "width:28px;height:28px;border-radius:50%;margin-right:10px;flex-shrink:0;object-fit:cover;background-color:rgba(255,255,255,0.1);";
+        logoImg.onerror = function() {
+          logoImg.style.display = "none";
+        };
+        row.appendChild(logoImg);
+      }
       row.appendChild(label);
       row.appendChild(arrow);
 
