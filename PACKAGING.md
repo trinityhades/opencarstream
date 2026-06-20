@@ -114,8 +114,8 @@ Users install with:
 
 ```bash
 brew tap trinityhades/opencarstream
-brew install --cask opencarstream-cli
-brew install --cask opencarstream
+brew trust trinityhades/opencarstream
+brew install opencarstream
 ```
 
 ## macOS Menu-Bar App
