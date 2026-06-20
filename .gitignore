@@ -18,3 +18,4 @@ venv/
 
 # GitShift personal account configuration
 **/github-accounts.json
+.DS_Store
