@@ -16,6 +16,7 @@ import os
 import signal
 import json
 import logging
+import select
 from collections import deque
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from http.server import HTTPServer, BaseHTTPRequestHandler
@@ -56,6 +57,18 @@ MJPEG_FPS     = int(os.environ.get("MJPEG_FPS", "24"))
 FFMPEG_QUALITY= int(os.environ.get("FFMPEG_QUALITY", "3"))   # 1=best, 31=worst
 STREAM_WIDTH  = int(os.environ.get("STREAM_WIDTH", "1920"))
 STREAM_HEIGHT = int(os.environ.get("STREAM_HEIGHT", "1080"))
+MP4_WIDTH     = int(os.environ.get("MP4_WIDTH", "1280"))
+MP4_HEIGHT    = int(os.environ.get("MP4_HEIGHT", "720"))
+MP4_VIDEO_BITRATE = os.environ.get("MP4_VIDEO_BITRATE", "1800k")
+MP4_AUDIO_BITRATE = os.environ.get("MP4_AUDIO_BITRATE", "128k")
+FFMPEG_HWACCEL = os.environ.get("FFMPEG_HWACCEL", "auto").strip().lower()
+FFMPEG_H264_ENCODER = os.environ.get("FFMPEG_H264_ENCODER", "auto").strip().lower()
+OGV_WIDTH     = int(os.environ.get("OGV_WIDTH", "640"))
+OGV_HEIGHT    = int(os.environ.get("OGV_HEIGHT", "360"))
+OGV_FPS       = int(os.environ.get("OGV_FPS", "24"))
+OGV_VIDEO_QUALITY = int(os.environ.get("OGV_VIDEO_QUALITY", "5"))
+OGV_AUDIO_BITRATE = os.environ.get("OGV_AUDIO_BITRATE", "96k")
+OGV_DEFAULT_PROFILE = os.environ.get("OGV_DEFAULT_PROFILE", "auto").strip().lower()
 MAX_STREAMS   = int(os.environ.get("MAX_STREAMS", "3"))       # concurrent stream slots
 AUDIO_DELAY_MS= int(os.environ.get("AUDIO_DELAY_MS", "0"))   # ms to delay video start after audio, to keep streams in sync
 LOCAL_MEDIA_VIDEO_DELAY_MS = int(
@@ -95,6 +108,19 @@ LOCAL_MEDIA_EXTS    = {
     ".mp4", ".mkv", ".webm", ".avi", ".mov", ".m4v", ".mpg", ".mpeg", ".ts",
 }
 IPTV_LIST_EXTS      = {".m3u", ".m3u8"}
+OGV_DIST_DIR        = os.path.join(os.path.dirname(os.path.abspath(__file__)), "ogv-dist")
+QUALITY_LEVELS      = {144, 240, 360, 480, 720, 1080, 1440, 2160}
+TRANSCODE_PROFILES  = {
+    "360":  {"width": 640,  "height": 360,  "fps": 24, "ogv_q": 5, "audio": "96k",  "mp4_bitrate": "1200k"},
+    "480":  {"width": 854,  "height": 480,  "fps": 24, "ogv_q": 5, "audio": "112k", "mp4_bitrate": "1600k"},
+    "720":  {"width": 1280, "height": 720,  "fps": 24, "ogv_q": 6, "audio": "128k", "mp4_bitrate": "2800k"},
+    "1080": {"width": 1920, "height": 1080, "fps": 24, "ogv_q": 6, "audio": "160k", "mp4_bitrate": "5000k"},
+    "1440": {"width": 2560, "height": 1440, "fps": 24, "ogv_q": 7, "audio": "192k", "mp4_bitrate": "9000k"},
+    "2160": {"width": 3840, "height": 2160, "fps": 24, "ogv_q": 7, "audio": "192k", "mp4_bitrate": "16000k"},
+}
+
+
+_ffmpeg_cap_cache: dict[str, object] = {}
 
 
 # ── Per-stream state ──────────────────────────────────────────────────────────
@@ -498,6 +524,120 @@ def _probe_fps(url: str) -> float | None:
         return float(val)
     except Exception:
         return None
+
+
+def _ffmpeg_lines(flag: str) -> list[str]:
+    cached = _ffmpeg_cap_cache.get(flag)
+    if isinstance(cached, list):
+        return cached
+    try:
+        r = subprocess.run(
+            ["ffmpeg", "-hide_banner", flag],
+            capture_output=True, text=True, timeout=8,
+        )
+        lines = (r.stdout + "\n" + r.stderr).splitlines()
+    except Exception:
+        lines = []
+    _ffmpeg_cap_cache[flag] = lines
+    return lines
+
+
+def _ffmpeg_encoder_available(name: str) -> bool:
+    return any(name in line for line in _ffmpeg_lines("-encoders"))
+
+
+def _ffmpeg_hwaccel_available(name: str) -> bool:
+    return any(line.strip() == name for line in _ffmpeg_lines("-hwaccels"))
+
+
+def _select_h264_encoder() -> str:
+    requested = FFMPEG_H264_ENCODER
+    if requested and requested != "auto":
+        return requested if _ffmpeg_encoder_available(requested) else "libx264"
+    # VideoToolbox is the Apple Silicon path when running natively on macOS.
+    # Docker Desktop Linux containers normally cannot see it, so this safely
+    # falls back to libx264 there.
+    if _ffmpeg_encoder_available("h264_videotoolbox"):
+        return "h264_videotoolbox"
+    return "libx264"
+
+
+def _ffmpeg_hwaccel_args() -> list[str]:
+    requested = FFMPEG_HWACCEL
+    if requested in ("", "none", "off", "0", "false"):
+        return []
+    if requested == "auto":
+        if _ffmpeg_hwaccel_available("videotoolbox"):
+            return ["-hwaccel", "videotoolbox"]
+        return []
+    if _ffmpeg_hwaccel_available(requested):
+        return ["-hwaccel", requested]
+    return []
+
+
+def _h264_video_args(width: int, height: int, bitrate: str) -> list[str]:
+    encoder = _select_h264_encoder()
+    common = [
+        "-vf", _scale_pad_filter(width, height),
+        "-pix_fmt", "yuv420p",
+        "-b:v", bitrate,
+        "-maxrate", bitrate,
+    ]
+    if encoder == "h264_videotoolbox":
+        return [
+            *common,
+            "-c:v", "h264_videotoolbox",
+            "-profile:v", "main",
+            "-g", "48",
+        ]
+    return [
+        *common,
+        "-c:v", "libx264",
+        "-preset", "veryfast",
+        "-tune", "zerolatency",
+        "-profile:v", "main",
+        "-bufsize", "3600k",
+        "-g", "48",
+        "-keyint_min", "48",
+    ]
+
+
+def _profile_settings(profile: str | None, source_quality: int | None = None) -> dict:
+    raw = (profile or OGV_DEFAULT_PROFILE or "auto").strip().lower()
+    if raw in ("", "default"):
+        return {
+            "name": "default",
+            "width": OGV_WIDTH,
+            "height": OGV_HEIGHT,
+            "fps": OGV_FPS,
+            "ogv_q": OGV_VIDEO_QUALITY,
+            "audio": OGV_AUDIO_BITRATE,
+            "mp4_bitrate": MP4_VIDEO_BITRATE,
+        }
+    if raw == "auto":
+        q = source_quality or 720
+        if q >= 2160:
+            raw = "2160"
+        elif q >= 1440:
+            raw = "1440"
+        elif q >= 1080:
+            raw = "1080"
+        elif q >= 720:
+            raw = "720"
+        elif q >= 480:
+            raw = "480"
+        else:
+            raw = "360"
+    settings = dict(TRANSCODE_PROFILES.get(raw) or TRANSCODE_PROFILES["720"])
+    settings["name"] = raw
+    return settings
+
+
+def _scale_pad_filter(width: int, height: int) -> str:
+    return (
+        f"scale={width}:{height}:force_original_aspect_ratio=decrease,"
+        f"pad={width}:{height}:(ow-iw)/2:(oh-ih)/2:black"
+    )
 
 
 def _yt_lang_args() -> list[str]:
@@ -1012,7 +1152,7 @@ def _probe_local_codecs(abs_path: str) -> tuple[str, str]:
         return "", ""
 
 
-def _direct_input_args(url: str) -> list[str]:
+def _direct_input_args(url: str, extra_headers: dict[str, str] | None = None) -> list[str]:
     """ffmpeg input flags for a direct stream URL."""
     from urllib.parse import urlparse, parse_qs
     if _is_local_media_url(url):
@@ -1024,7 +1164,15 @@ def _direct_input_args(url: str) -> list[str]:
     parsed = urlparse(url)
     host = parsed.netloc.lower()
     headers = ""
-    if "pluto.tv" in host:
+    args: list[str] = []
+    if extra_headers:
+        ua = extra_headers.get("User-Agent") or extra_headers.get("user-agent") or _BROWSER_UA
+        args = ["-user_agent", ua]
+        for key, value in extra_headers.items():
+            if key.lower() == "user-agent" or value is None:
+                continue
+            headers += f"{key}: {value}\r\n"
+    elif "pluto.tv" in host:
         country = (parse_qs(parsed.query).get("country", [""])[0] or "").upper()
         xff = ""
         if country:
@@ -1040,7 +1188,9 @@ def _direct_input_args(url: str) -> list[str]:
         )
         if xff:
             headers += f"X-Forwarded-For: {xff}\r\n"
-    args = ["-user_agent", _BROWSER_UA]
+        args = ["-user_agent", _BROWSER_UA]
+    else:
+        args = ["-user_agent", _BROWSER_UA]
     if headers:
         args += ["-headers", headers]
     # Don't use -re for Pluto live HLS: let ffmpeg buffer ahead for smoother output.
@@ -1049,21 +1199,27 @@ def _direct_input_args(url: str) -> list[str]:
     return args
 
 
-def _resolve_mp4_url(url: str, quality: int | None) -> tuple[str, str]:
+def _resolve_mp4_url(url: str, quality: int | None, profile: str | None = None) -> tuple[str, str]:
     """Resolve a direct playable URL for MP4/native mode. Returns (direct_url, error)."""
+    transcode_suffix = ""
+    if quality:
+        transcode_suffix += f"&quality={quality}"
+    if profile:
+        transcode_suffix += "&profile=" + quote(profile, safe="")
+
     # Local files: transcode via /stream_fmp4 to ensure H.264+AAC browser compat
     # (handles Xvid, AC3, DTS, MPEG-2, HEVC and any other unsupported codec)
     if _is_local_media_url(url):
-        return "/stream_fmp4?url=" + quote(url, safe=""), ""
+        return "/stream_fmp4?url=" + quote(url, safe="") + transcode_suffix, ""
 
     # Pluto TV live HLS: Chrome/Firefox can't play HLS natively, transcode via /stream_fmp4
     if _is_pluto_stream(url) or _is_direct_hls(url):
-        return "/stream_fmp4?url=" + quote(url, safe=""), ""
+        return "/stream_fmp4?url=" + quote(url, safe="") + transcode_suffix, ""
 
     # Acestream, RTP/UDP/RTSP, LAN MPEG-TS — browser can't play these natively;
     # transcode to fragmented MP4 on the fly via /stream_fmp4
     if _is_acestream(url) or _is_rtp_stream(url) or _is_local_network_stream(url):
-        return "/stream_fmp4?url=" + quote(url, safe=""), ""
+        return "/stream_fmp4?url=" + quote(url, safe="") + transcode_suffix, ""
 
     # YouTube, Twitch, etc: resolve a direct CDN URL via yt-dlp and serve it
     # directly to the browser. Prefer H.264+AAC so no transcoding is needed.
@@ -1085,6 +1241,77 @@ def _resolve_mp4_url(url: str, quality: int | None) -> tuple[str, str]:
     except Exception as e:
         return "", str(e)
     return "", "Could not resolve a direct playable URL"
+
+
+def _resolve_ffmpeg_input_url(url: str, quality: int | None) -> tuple[str, str, dict[str, str]]:
+    """Return a URL/file target plus request headers that ffmpeg can open directly."""
+    if _is_direct_stream(url):
+        return _ffmpeg_input_target(url), "", {}
+
+    q = quality or 720
+    fmt = f"best[height<={q}]/best"
+    try:
+        r = subprocess.run(
+            ["yt-dlp", "--js-runtimes", "node", "--no-playlist",
+             "-f", fmt, "--dump-json", "--quiet", url],
+            capture_output=True, text=True, timeout=30,
+        )
+        if r.returncode == 0:
+            try:
+                info = json.loads(r.stdout)
+            except json.JSONDecodeError:
+                lines = [line.strip() for line in r.stdout.splitlines() if line.strip().startswith("{")]
+                info = json.loads(lines[-1]) if lines else {}
+            direct_url = (info.get("url") or "").strip()
+            headers = info.get("http_headers") if isinstance(info.get("http_headers"), dict) else {}
+            if direct_url:
+                return direct_url, "", {str(k): str(v) for k, v in headers.items() if v is not None}
+        return "", r.stderr.strip() or "yt-dlp could not resolve a stream URL", {}
+    except Exception as e:
+        return "", str(e), {}
+
+
+def _short_error(msg: str, max_len: int = 1400) -> str:
+    msg = (msg or "").strip()
+    if len(msg) <= max_len:
+        return msg
+    return msg[:max_len - 1].rstrip() + "…"
+
+
+def _build_ogv_ffmpeg_cmd(
+    input_url: str,
+    seek_s: float = 0.0,
+    output: str = "pipe:1",
+    duration_limit_s: float | None = None,
+    input_headers: dict[str, str] | None = None,
+    profile: str | None = None,
+    source_quality: int | None = None,
+) -> list[str]:
+    """Build the Theora/Vorbis Ogg transcode command used by ogv.js playback."""
+    seek_args = ["-ss", str(int(seek_s))] if seek_s > 0 else []
+    duration_args = ["-t", str(duration_limit_s)] if duration_limit_s else []
+    settings = _profile_settings(profile, source_quality)
+    return [
+        "ffmpeg",
+        "-loglevel", "error",
+        *_ffmpeg_hwaccel_args(),
+        *_direct_input_args(input_url, extra_headers=input_headers),
+        *seek_args,
+        "-probesize", "10M",
+        "-analyzeduration", "5M",
+        "-i", input_url,
+        *duration_args,
+        "-map", "0:v:0",
+        "-map", "0:a:0?",
+        "-vf", _scale_pad_filter(settings["width"], settings["height"]),
+        "-r", str(settings["fps"]),
+        "-c:v", "libtheora",
+        "-q:v", str(settings["ogv_q"]),
+        "-c:a", "libvorbis",
+        "-b:a", settings["audio"],
+        "-f", "ogg",
+        output,
+    ]
 
 
 def _start_audio_buffer(stream: Stream):
@@ -1218,11 +1445,7 @@ def _start_muxed_pipeline(stream: Stream):
     - audio MP3 chunks on fd 3 (pipe:3)
     This avoids a second source connection for audio.
     """
-    vf = (
-        f"scale={STREAM_WIDTH}:{STREAM_HEIGHT}"
-        f":force_original_aspect_ratio=decrease,"
-        f"pad={STREAM_WIDTH}:{STREAM_HEIGHT}:(ow-iw)/2:(oh-ih)/2:black"
-    )
+    vf = _scale_pad_filter(STREAM_WIDTH, STREAM_HEIGHT)
     audio_r, audio_w = os.pipe()
     audio_out = [
         "-map", "0:a:0?",
@@ -1349,11 +1572,7 @@ def _run_hls_pipeline(stream: Stream):
                 "-loglevel", "error",
                 *_direct_input_args(stream.url),
                 "-i", _ffmpeg_input_target(stream.url),
-                "-vf", (
-                    f"scale={STREAM_WIDTH}:{STREAM_HEIGHT}"
-                    f":force_original_aspect_ratio=decrease,"
-                    f"pad={STREAM_WIDTH}:{STREAM_HEIGHT}:(ow-iw)/2:(oh-ih)/2:black"
-                ),
+                "-vf", _scale_pad_filter(STREAM_WIDTH, STREAM_HEIGHT),
                 "-vcodec", "mjpeg",
                 "-q:v", str(FFMPEG_QUALITY),
                 "-r", str(MJPEG_FPS),
@@ -1505,11 +1724,7 @@ def run_pipeline(stream: Stream):
                     *seek_args,
                     "-re",
                     "-i", direct_url,
-                    "-vf", (
-                        f"scale={STREAM_WIDTH}:{STREAM_HEIGHT}"
-                        f":force_original_aspect_ratio=decrease,"
-                        f"pad={STREAM_WIDTH}:{STREAM_HEIGHT}:(ow-iw)/2:(oh-ih)/2:black"
-                    ),
+                    "-vf", _scale_pad_filter(STREAM_WIDTH, STREAM_HEIGHT),
                     "-vcodec", "mjpeg",
                     "-q:v", str(FFMPEG_QUALITY),
                     "-r", str(output_fps),
@@ -1540,11 +1755,7 @@ def run_pipeline(stream: Stream):
                     "-loglevel", "error",
                     "-re",
                     "-i", "pipe:0",
-                    "-vf", (
-                        f"scale={STREAM_WIDTH}:{STREAM_HEIGHT}"
-                        f":force_original_aspect_ratio=decrease,"
-                        f"pad={STREAM_WIDTH}:{STREAM_HEIGHT}:(ow-iw)/2:(oh-ih)/2:black"
-                    ),
+                    "-vf", _scale_pad_filter(STREAM_WIDTH, STREAM_HEIGHT),
                     "-vcodec", "mjpeg",
                     "-q:v", str(FFMPEG_QUALITY),
                     "-r", str(MJPEG_FPS),
@@ -1733,6 +1944,7 @@ STATUS_HTML = """<!DOCTYPE html>
       <input id="yt-id" type="text" placeholder="URL or YouTube video ID">
       <div id="yt-mode-btns" style="display:flex;gap:6px;flex-wrap:wrap;"></div>
       <div id="yt-quality-btns" style="display:flex;gap:6px;flex-wrap:wrap;"></div>
+      <div id="yt-profile-btns" style="display:flex;gap:6px;flex-wrap:wrap;"></div>
       <div id="yt-sync-btns" style="display:flex;gap:6px;flex-wrap:wrap;"></div>
     </div>
     <div style="margin-top:10px;">
@@ -1754,6 +1966,10 @@ STATUS_HTML = """<!DOCTYPE html>
       <div class="env-item">FPS <b>{{fps}}</b></div>
       <div class="env-item">Quality <b>{{quality}}</b></div>
       <div class="env-item">Resolution <b>{{width}}×{{height}}</b></div>
+      <div class="env-item">MP4 <b>{{mp4_width}}×{{mp4_height}} @ {{mp4_bitrate}}</b></div>
+      <div class="env-item">OGV <b>{{ogv_width}}×{{ogv_height}} @ {{ogv_fps}} fps</b></div>
+      <div class="env-item">H.264 encoder <b>{{h264_encoder}}</b></div>
+      <div class="env-item">HW accel <b>{{hwaccel}}</b></div>
       <div class="env-item">Max streams <b>{{max_streams}}</b></div>
     <div class="env-item">Audio start delay <b>{{audio_delay_ms}} ms</b></div>
     <div class="env-item">Subscriptions <b>{{subs_status}}</b></div>
@@ -1770,6 +1986,7 @@ STATUS_HTML = """<!DOCTYPE html>
     <div style="display:flex;flex-direction:column;gap:10px;">
       <div id="feed-mode-btns" style="display:flex;gap:6px;flex-wrap:wrap;"></div>
       <div id="feed-quality-btns" style="display:flex;gap:6px;flex-wrap:wrap;"></div>
+      <div id="feed-profile-btns" style="display:flex;gap:6px;flex-wrap:wrap;"></div>
       <div id="feed-sync-btns" style="display:flex;gap:6px;flex-wrap:wrap;"></div>
     </div>
   </div>
@@ -1836,6 +2053,7 @@ STATUS_HTML = """<!DOCTYPE html>
     <div style="display:flex;flex-direction:column;gap:10px;">
       <div id="twitch-mode-btns" style="display:flex;gap:6px;flex-wrap:wrap;"></div>
       <div id="twitch-quality-btns" style="display:flex;gap:6px;flex-wrap:wrap;"></div>
+      <div id="twitch-profile-btns" style="display:flex;gap:6px;flex-wrap:wrap;"></div>
       <div id="twitch-sync-btns" style="display:flex;gap:6px;flex-wrap:wrap;"></div>
     </div>
   </div>
@@ -1866,6 +2084,7 @@ STATUS_HTML = """<!DOCTYPE html>
     <h2>Playback options</h2>
     <div style="display:flex;flex-direction:column;gap:10px;">
       <div id="pluto-mode-btns" style="display:flex;gap:6px;flex-wrap:wrap;"></div>
+      <div id="pluto-profile-btns" style="display:flex;gap:6px;flex-wrap:wrap;"></div>
       <div id="pluto-sync-btns" style="display:flex;gap:6px;flex-wrap:wrap;"></div>
       <input id="pluto-filter" type="text" placeholder="Filter channels…"
              style="background:var(--input-bg);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:8px 12px;font-family:monospace;">
@@ -1886,6 +2105,7 @@ STATUS_HTML = """<!DOCTYPE html>
     <div style="display:flex;flex-direction:column;gap:10px;">
       <div id="iptv-mode-btns" style="display:flex;gap:6px;flex-wrap:wrap;"></div>
       <div id="iptv-quality-btns" style="display:flex;gap:6px;flex-wrap:wrap;"></div>
+      <div id="iptv-profile-btns" style="display:flex;gap:6px;flex-wrap:wrap;"></div>
       <div id="iptv-sync-btns" style="display:flex;gap:6px;flex-wrap:wrap;"></div>
     </div>
   </div>
@@ -1923,6 +2143,7 @@ STATUS_HTML = """<!DOCTYPE html>
     <div style="display:flex;flex-direction:column;gap:8px;">
       <div id="ace-mode-btns" style="display:flex;gap:6px;flex-wrap:wrap;"></div>
       <div id="ace-quality-btns" style="display:flex;gap:6px;flex-wrap:wrap;"></div>
+      <div id="ace-profile-btns" style="display:flex;gap:6px;flex-wrap:wrap;"></div>
       <div id="ace-sync-btns" style="display:flex;gap:6px;flex-wrap:wrap;"></div>
     </div>
   </div>
@@ -1962,6 +2183,7 @@ STATUS_HTML = """<!DOCTYPE html>
     <h2>Playback options</h2>
     <div style="display:flex;flex-direction:column;gap:10px;">
       <div id="local-mode-btns" style="display:flex;gap:6px;flex-wrap:wrap;"></div>
+      <div id="local-profile-btns" style="display:flex;gap:6px;flex-wrap:wrap;"></div>
       <div id="local-sync-btns" style="display:flex;gap:6px;flex-wrap:wrap;"></div>
       <div>
         <button id="local-refresh"
@@ -2085,26 +2307,54 @@ STATUS_HTML = """<!DOCTYPE html>
 
   // ── Mode button options (shared across tabs) ──
   var modeOptions = [
-    { value: "mjpeg",  label: "MJPEG (Tesla)" },
-    { value: "mp4",    label: "MP4 (native)" },
+    { value: "ogv",    label: "OGV (Tesla)" },
+    { value: "mp4",    label: "MP4 (smooth)" },
+    { value: "mjpeg",  label: "MJPEG fallback" },
     { value: "audio",  label: "Audio only" }
   ];
-
-  // ── Stream tab ──
-  var idInput    = document.getElementById("yt-id");
-  var goButton   = document.getElementById("go-stream");
-
-  var modeSel = createButtonGroup("yt-mode-btns", modeOptions, "mjpeg");
-
-  var qualitySel = createButtonGroup("yt-quality-btns", [
-    { value: "", label: "AUTO" },
+  var qualityOptions = [
+    { value: "auto", label: "SRC AUTO" },
+    { value: "2160", label: "4K" },
+    { value: "1440", label: "1440p" },
     { value: "1080", label: "1080p" },
     { value: "720", label: "720p" },
     { value: "480", label: "480p" },
     { value: "360", label: "360p" },
     { value: "240", label: "240p" },
     { value: "144", label: "144p" }
-  ], "");
+  ];
+  var profileOptions = [
+    { value: "auto", label: "OUT AUTO" },
+    { value: "2160", label: "OUT 4K" },
+    { value: "1440", label: "OUT 1440" },
+    { value: "1080", label: "OUT 1080" },
+    { value: "720", label: "OUT 720" },
+    { value: "480", label: "OUT 480" },
+    { value: "360", label: "OUT 360" }
+  ];
+
+  function autoQualityForNetwork(mode) {
+    var c = navigator.connection || navigator.mozConnection || navigator.webkitConnection;
+    if (!c) return mode === "ogv" ? "720" : "1080";
+    if (c.saveData) return "360";
+    var down = Number(c.downlink || 0);
+    if (!down) return mode === "ogv" ? "720" : "1080";
+    if (down >= 35) return "2160";
+    if (down >= 18) return "1440";
+    if (down >= 9) return "1080";
+    if (down >= 4.5) return "720";
+    if (down >= 2.2) return "480";
+    return "360";
+  }
+
+  // ── Stream tab ──
+  var idInput    = document.getElementById("yt-id");
+  var goButton   = document.getElementById("go-stream");
+
+  var modeSel = createButtonGroup("yt-mode-btns", modeOptions, "ogv");
+
+  var qualitySel = createButtonGroup("yt-quality-btns", qualityOptions, "auto");
+  var profileSel = createButtonGroup("yt-profile-btns", profileOptions, "auto");
 
   var syncSel = createButtonGroup("yt-sync-btns", [
     { value: "0", label: "0s" },
@@ -2118,11 +2368,15 @@ STATUS_HTML = """<!DOCTYPE html>
     { value: "4000", label: "4s" }
   ], "{{audio_delay_ms}}");
 
-  function buildWatchUrl(videoUrl, quality, sync, mode) {
+  function buildWatchUrl(videoUrl, quality, sync, mode, profile) {
+    var resolvedQuality = quality === "auto" ? autoQualityForNetwork(mode) : quality;
+    var resolvedProfile = profile === "auto" ? autoQualityForNetwork(mode) : profile;
     var target = "/watch?url=" + encodeURIComponent(videoUrl);
-    if (quality) target += "&quality=" + encodeURIComponent(quality);
+    if (resolvedQuality) target += "&quality=" + encodeURIComponent(resolvedQuality);
     if (sync)    target += "&sync="    + encodeURIComponent(sync);
-    if (mode && mode !== "mjpeg") target += "&mode=" + encodeURIComponent(mode);
+    if (mode) target += "&mode=" + encodeURIComponent(mode);
+    if (resolvedProfile && mode !== "audio") target += "&profile=" + encodeURIComponent(resolvedProfile);
+    if (quality === "auto" || profile === "auto") target += "&auto=1";
     return target;
   }
 
@@ -2145,7 +2399,7 @@ STATUS_HTML = """<!DOCTYPE html>
     var raw = (idInput.value || "").trim();
     if (!raw) { idInput.focus(); return; }
     window.location.href = buildWatchUrl(
-      resolveInputUrl(raw), qualitySel.value, syncSel.value, modeSel.value
+      resolveInputUrl(raw), qualitySel.value, syncSel.value, modeSel.value, profileSel.value
     );
   }
 
@@ -2162,16 +2416,10 @@ STATUS_HTML = """<!DOCTYPE html>
   var twitchVodSt    = document.getElementById("twitch-vod-status");
   var twitchVodGrid  = document.getElementById("twitch-vod-grid");
 
-  var twitchMode = createButtonGroup("twitch-mode-btns", modeOptions, "mjpeg");
+  var twitchMode = createButtonGroup("twitch-mode-btns", modeOptions, "ogv");
 
-  var twitchQuality = createButtonGroup("twitch-quality-btns", [
-    { value: "", label: "AUTO" },
-    { value: "1080", label: "1080p" },
-    { value: "720", label: "720p" },
-    { value: "480", label: "480p" },
-    { value: "360", label: "360p" },
-    { value: "240", label: "240p" }
-  ], "");
+  var twitchQuality = createButtonGroup("twitch-quality-btns", qualityOptions, "auto");
+  var twitchProfile = createButtonGroup("twitch-profile-btns", profileOptions, "auto");
 
   var twitchSync = createButtonGroup("twitch-sync-btns", [
     { value: "0", label: "0s" },
@@ -2189,7 +2437,7 @@ STATUS_HTML = """<!DOCTYPE html>
     var ch = (twitchLiveCh.value || "").trim().replace(/^@/, "");
     if (!ch) { twitchLiveCh.focus(); return; }
     var url = "https://www.twitch.tv/" + ch;
-    window.location.href = buildWatchUrl(url, twitchQuality.value, twitchSync.value, twitchMode.value);
+    window.location.href = buildWatchUrl(url, twitchQuality.value, twitchSync.value, twitchMode.value, twitchProfile.value);
   });
   twitchLiveCh.addEventListener("keydown", function (e) {
     if ((e.key || "") === "Enter" || e.keyCode === 13) twitchLiveGo.click();
@@ -2236,7 +2484,7 @@ STATUS_HTML = """<!DOCTYPE html>
           (dur ? '<div class="feed-dur">' + escHtml(dur) + '</div>' : '') +
           '</div>';
         card.addEventListener("click", function () {
-          window.location.href = buildWatchUrl(v.url, twitchQuality.value, twitchSync.value, twitchMode.value);
+          window.location.href = buildWatchUrl(v.url, twitchQuality.value, twitchSync.value, twitchMode.value, twitchProfile.value);
         });
         twitchVodGrid.appendChild(card);
       });
@@ -2261,7 +2509,8 @@ STATUS_HTML = """<!DOCTYPE html>
   var plutoList     = document.getElementById("pluto-list");
   var plutoLangBtns = document.getElementById("pluto-lang-btns");
 
-  var plutoMode = createButtonGroup("pluto-mode-btns", modeOptions, "mjpeg");
+  var plutoMode = createButtonGroup("pluto-mode-btns", modeOptions, "ogv");
+  var plutoProfile = createButtonGroup("pluto-profile-btns", profileOptions, "auto");
 
   var plutoSync = createButtonGroup("pluto-sync-btns", [
     { value: "0", label: "0s" },
@@ -2304,11 +2553,12 @@ STATUS_HTML = """<!DOCTYPE html>
           var plutoWatchUrl = "/pluto_watch?lang=" + encodeURIComponent(plutoActiveLang) +
             "&id=" + encodeURIComponent(ch.id) +
             "&sync=" + encodeURIComponent(plutoSync.value);
-          if (plutoMode.value && plutoMode.value !== "mjpeg") plutoWatchUrl += "&mode=" + encodeURIComponent(plutoMode.value);
+          if (plutoMode.value) plutoWatchUrl += "&mode=" + encodeURIComponent(plutoMode.value);
+          if (plutoProfile.value) plutoWatchUrl += "&profile=" + encodeURIComponent(plutoProfile.value === "auto" ? autoQualityForNetwork(plutoMode.value) : plutoProfile.value);
           window.location.href = plutoWatchUrl;
           return;
         }
-        window.location.href = buildWatchUrl(ch.url, "", plutoSync.value, plutoMode.value);
+        window.location.href = buildWatchUrl(ch.url, "auto", plutoSync.value, plutoMode.value, plutoProfile.value);
       });
       plutoList.appendChild(row);
     });
@@ -2417,16 +2667,10 @@ STATUS_HTML = """<!DOCTYPE html>
   var iptvStatus    = document.getElementById("iptv-status");
   var iptvStreamsEl = document.getElementById("iptv-streams");
 
-  var iptvMode = createButtonGroup("iptv-mode-btns", modeOptions, "mjpeg");
+  var iptvMode = createButtonGroup("iptv-mode-btns", modeOptions, "ogv");
 
-  var iptvQuality = createButtonGroup("iptv-quality-btns", [
-    { value: "", label: "AUTO" },
-    { value: "1080", label: "1080p" },
-    { value: "720", label: "720p" },
-    { value: "480", label: "480p" },
-    { value: "360", label: "360p" },
-    { value: "240", label: "240p" }
-  ], "");
+  var iptvQuality = createButtonGroup("iptv-quality-btns", qualityOptions, "auto");
+  var iptvProfile = createButtonGroup("iptv-profile-btns", profileOptions, "auto");
 
   var iptvSync = createButtonGroup("iptv-sync-btns", [
     { value: "0", label: "0s" },
@@ -2505,7 +2749,7 @@ STATUS_HTML = """<!DOCTYPE html>
         '<span style="font-size:.95rem;">' + escHtml(item.name || item.url) + '</span>' +
         '<span style="font-family:monospace;font-size:.75rem;color:var(--muted);">OPEN \u2192</span>';
       row.addEventListener("click", function () {
-        window.location.href = buildWatchUrl(item.url, iptvQuality.value, iptvSync.value, iptvMode.value);
+        window.location.href = buildWatchUrl(item.url, iptvQuality.value, iptvSync.value, iptvMode.value, iptvProfile.value);
       });
       iptvStreamsEl.appendChild(row);
     });
@@ -2631,7 +2875,7 @@ STATUS_HTML = """<!DOCTYPE html>
       card.remove();
     });
     card.addEventListener("click", function () {
-      window.location.href = buildWatchUrl(v.url, feedQuality.value, feedSync.value, feedMode.value);
+      window.location.href = buildWatchUrl(v.url, feedQuality.value, feedSync.value, feedMode.value, feedProfile.value);
     });
     return card;
   }
@@ -2686,17 +2930,10 @@ STATUS_HTML = """<!DOCTYPE html>
   var feedGrid     = document.getElementById("feed-grid");
   var feedCardTitle= document.getElementById("feed-card-title");
 
-  var feedMode = createButtonGroup("feed-mode-btns", modeOptions, "mjpeg");
+  var feedMode = createButtonGroup("feed-mode-btns", modeOptions, "ogv");
 
-  var feedQuality = createButtonGroup("feed-quality-btns", [
-    { value: "", label: "AUTO" },
-    { value: "1080", label: "1080p" },
-    { value: "720", label: "720p" },
-    { value: "480", label: "480p" },
-    { value: "360", label: "360p" },
-    { value: "240", label: "240p" },
-    { value: "144", label: "144p" }
-  ], "");
+  var feedQuality = createButtonGroup("feed-quality-btns", qualityOptions, "auto");
+  var feedProfile = createButtonGroup("feed-profile-btns", profileOptions, "auto");
 
   var feedSync = createButtonGroup("feed-sync-btns", [
     { value: "0", label: "0s" },
@@ -2935,7 +3172,7 @@ STATUS_HTML = """<!DOCTYPE html>
         (dur ? '<div class="feed-dur">' + escHtml(dur) + '</div>' : '') +
         '</div>';
       card.addEventListener("click", function () {
-        window.location.href = buildWatchUrl(v.url, feedQuality.value, feedSync.value, feedMode.value);
+        window.location.href = buildWatchUrl(v.url, feedQuality.value, feedSync.value, feedMode.value, feedProfile.value);
       });
       ytSearchGrid.appendChild(card);
     });
@@ -3007,7 +3244,7 @@ STATUS_HTML = """<!DOCTYPE html>
         (dur ? '<div class="feed-dur">' + escHtml(dur) + '</div>' : '') +
         '</div>';
       card.addEventListener("click", function () {
-        window.location.href = buildWatchUrl(v.url, feedQuality.value, feedSync.value, feedMode.value);
+        window.location.href = buildWatchUrl(v.url, feedQuality.value, feedSync.value, feedMode.value, feedProfile.value);
       });
       feedGrid.appendChild(card);
     });
@@ -3077,15 +3314,10 @@ STATUS_HTML = """<!DOCTYPE html>
   var aceSaveBtn  = document.getElementById("ace-save-btn");
   var aceSavedList= document.getElementById("ace-saved-list");
 
-  var aceMode = createButtonGroup("ace-mode-btns", modeOptions, "mjpeg");
+  var aceMode = createButtonGroup("ace-mode-btns", modeOptions, "ogv");
 
-  var aceQuality = createButtonGroup("ace-quality-btns", [
-    { value: "", label: "AUTO" },
-    { value: "1080", label: "1080p" },
-    { value: "720", label: "720p" },
-    { value: "480", label: "480p" },
-    { value: "360", label: "360p" }
-  ], "");
+  var aceQuality = createButtonGroup("ace-quality-btns", qualityOptions, "auto");
+  var aceProfile = createButtonGroup("ace-profile-btns", profileOptions, "auto");
 
   var aceSync = createButtonGroup("ace-sync-btns", [
     { value: "0", label: "0s" },
@@ -3132,7 +3364,7 @@ STATUS_HTML = """<!DOCTYPE html>
     var url = buildAceUrl(raw);
     if (!url) { aceIdInput.focus(); return; }
     localStorage.setItem(ACE_HOST_KEY, (aceHost.value || "").trim());
-    window.location.href = buildWatchUrl(url, aceQuality.value, aceSync.value, aceMode.value);
+    window.location.href = buildWatchUrl(url, aceQuality.value, aceSync.value, aceMode.value, aceProfile.value);
   }
 
   aceGo.addEventListener("click", openAceStream);
@@ -3159,7 +3391,7 @@ STATUS_HTML = """<!DOCTYPE html>
         'color:var(--muted);border-radius:4px;padding:2px 8px;cursor:pointer;font-size:.75rem;">✕</button>';
       row.querySelector("[data-idx]").addEventListener("click", function () {
         var url = buildAceUrl(item.id);
-        if (url) window.location.href = buildWatchUrl(url, aceQuality.value, aceSync.value, aceMode.value);
+        if (url) window.location.href = buildWatchUrl(url, aceQuality.value, aceSync.value, aceMode.value, aceProfile.value);
       });
       row.querySelector("[data-del]").addEventListener("click", function (e) {
         e.stopPropagation();
@@ -3207,7 +3439,8 @@ STATUS_HTML = """<!DOCTYPE html>
   var localStatus  = document.getElementById("local-status");
   var localList    = document.getElementById("local-list");
 
-  var localMode = createButtonGroup("local-mode-btns", modeOptions, "mjpeg");
+  var localMode = createButtonGroup("local-mode-btns", modeOptions, "ogv");
+  var localProfile = createButtonGroup("local-profile-btns", profileOptions, "auto");
 
   var localSync = createButtonGroup("local-sync-btns", [
     { value: "0", label: "0s" },
@@ -3286,7 +3519,8 @@ STATUS_HTML = """<!DOCTYPE html>
       row.addEventListener("click", function () {
         var localUrl = "/local_watch?file=" + encodeURIComponent(item.path) +
           "&sync=" + encodeURIComponent(localSync.value);
-        if (localMode.value && localMode.value !== "mjpeg") localUrl += "&mode=" + encodeURIComponent(localMode.value);
+        if (localMode.value) localUrl += "&mode=" + encodeURIComponent(localMode.value);
+        if (localProfile.value) localUrl += "&profile=" + encodeURIComponent(localProfile.value);
         window.location.href = localUrl;
       });
       localList.appendChild(row);
@@ -3967,6 +4201,219 @@ MP4_WATCH_HTML = """<!DOCTYPE html>
 </body></html>"""
 
 
+OGV_WATCH_HTML = """<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>OpenCarStream - OGV</title>
+<script src="/ogv-dist/ogv.js"></script>
+<style>
+  :root{--red:#e31937;--dark:#050505;--panel:#101015;--text:#f1f1f4;--muted:#8e8e9a;--line:#2a2a34;}
+  *{box-sizing:border-box;margin:0;padding:0;}
+  body{background:var(--dark);color:var(--text);font-family:Arial,sans-serif;min-height:100vh;overflow:hidden;}
+  .stage{position:fixed;inset:0;background:#000;display:flex;align-items:center;justify-content:center;}
+  #player{width:100%;height:100%;display:block;background:#000;}
+  .top,.controls{position:fixed;left:0;right:0;z-index:10;transition:opacity .18s;}
+  .top{top:0;padding:14px 18px;background:linear-gradient(to bottom,rgba(0,0,0,.82),rgba(0,0,0,0));display:flex;align-items:center;gap:14px;}
+  .back{color:#fff;text-decoration:none;background:rgba(255,255,255,.14);border:1px solid rgba(255,255,255,.18);border-radius:7px;padding:10px 13px;font-size:16px;}
+  .title{font-weight:700;font-size:18px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-shadow:0 1px 2px #000;}
+  .center{position:fixed;inset:0;z-index:9;display:flex;align-items:center;justify-content:center;gap:28px;pointer-events:none;}
+  .bigbtn,.ctlbtn{border:0;color:#fff;background:rgba(255,255,255,.16);backdrop-filter:blur(8px);cursor:pointer;}
+  .bigbtn{width:76px;height:76px;border-radius:50%;font-size:28px;pointer-events:auto;}
+  .skip{width:60px;height:60px;border-radius:50%;font-size:16px;font-weight:700;}
+  .controls{bottom:0;padding:18px;background:linear-gradient(to top,rgba(0,0,0,.86),rgba(0,0,0,0));display:flex;align-items:center;gap:12px;}
+  .ctlbtn{min-width:48px;height:44px;border-radius:7px;font-size:16px;}
+  .time{font-family:monospace;font-size:16px;color:#fff;min-width:78px;text-align:center;}
+  .bar{position:relative;flex:1;height:28px;display:flex;align-items:center;}
+  .track{width:100%;height:6px;background:rgba(255,255,255,.22);border-radius:99px;overflow:hidden;}
+  .fill{height:100%;width:0;background:var(--red);}
+  .status{position:fixed;left:18px;bottom:78px;z-index:12;max-width:calc(100vw - 36px);padding:10px 12px;background:rgba(20,0,5,.9);border:1px solid rgba(227,25,55,.55);border-radius:7px;color:#ffd2d8;font-family:monospace;font-size:13px;white-space:pre-wrap;display:none;}
+  .hidden-ui .top,.hidden-ui .controls,.hidden-ui .center{opacity:0;pointer-events:none;}
+</style>
+</head>
+<body>
+<div class="stage" id="stage"></div>
+<div class="top">
+  <a class="back" href="/">Back</a>
+  <div class="title">{{stream_title}}</div>
+</div>
+<div class="center">
+  <button class="bigbtn skip" id="back15">-15</button>
+  <button class="bigbtn" id="playPause">Play</button>
+  <button class="bigbtn skip" id="fwd15">+15</button>
+</div>
+<div class="controls">
+  <button class="ctlbtn" id="ctlPlay">Play</button>
+  <span class="time" id="elapsed">0:00</span>
+  <div class="bar"><div class="track"><div class="fill" id="fill"></div></div></div>
+  <button class="ctlbtn" id="restart">Start</button>
+</div>
+<div class="status" id="status">{{error_msg}}</div>
+<script>
+(function () {
+  var streamUrl = {{stream_url_json}};
+  var originalUrl = {{original_url_json}};
+  var quality = {{video_quality_json}};
+  var profile = {{profile_json}};
+  var seekS = parseInt("{{seek_s}}", 10) || 0;
+  OGVLoader.base = "/ogv-dist";
+  var player = new OGVPlayer({base: "/ogv-dist", worker: true});
+  var stage = document.getElementById("stage");
+  var statusEl = document.getElementById("status");
+  var playBtn = document.getElementById("playPause");
+  var ctlPlay = document.getElementById("ctlPlay");
+  var elapsed = document.getElementById("elapsed");
+  var fill = document.getElementById("fill");
+  var hideTimer = null;
+
+  player.id = "player";
+  player.src = streamUrl;
+  stage.appendChild(player);
+
+  function showStatus(msg) {
+    if (!msg) return;
+    statusEl.style.display = "block";
+    statusEl.textContent = msg;
+  }
+  showStatus({{error_msg_json}});
+
+  function fmt(s) {
+    s = Math.max(0, Math.floor(s || 0));
+    var h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), sec = s % 60;
+    if (h) return h + ":" + (m < 10 ? "0" : "") + m + ":" + (sec < 10 ? "0" : "") + sec;
+    return m + ":" + (sec < 10 ? "0" : "") + sec;
+  }
+  function updateButtons() {
+    var label = player.paused ? "Play" : "Pause";
+    playBtn.textContent = label;
+    ctlPlay.textContent = label;
+  }
+  function clearStatus() {
+    statusEl.style.display = "none";
+    statusEl.textContent = "";
+  }
+  function streamDiagnosticUrl() {
+    return streamUrl + (streamUrl.indexOf("?") === -1 ? "?" : "&") + "diagnostic=1";
+  }
+  function diagnoseFailure(prefix) {
+    if (!window.fetch) {
+      showStatus(prefix || "OGV playback failed. Try MP4 or MJPEG fallback for this source.");
+      return;
+    }
+    fetch(streamDiagnosticUrl(), {cache: "no-store"})
+      .then(function (resp) {
+        return resp.text().then(function (text) {
+          try { return JSON.parse(text); }
+          catch (e) {
+            return {
+              ok: false,
+              stage: "http",
+              error: "HTTP " + resp.status + (text ? ": " + text.slice(0, 500) : "")
+            };
+          }
+        });
+      })
+      .then(function (data) {
+        var msg = prefix || "OGV playback failed.";
+        if (data && data.stage) msg += "\\nstage: " + data.stage;
+        if (data && data.error) msg += "\\nerror: " + data.error;
+        showStatus(msg);
+      })
+      .catch(function () {
+        showStatus(prefix || "OGV playback failed. Try MP4 or MJPEG fallback for this source.");
+      });
+  }
+  function playNow() {
+    clearStatus();
+    try {
+      var p = player.play();
+      if (p && p.catch) {
+        p.catch(function (err) {
+          var msg = "Tap Play to start. This browser blocks autoplay until a user gesture.";
+          if (err && err.message && err.message.indexOf("error streaming") !== -1) {
+            diagnoseFailure("OGV network stream failed while opening.");
+            return;
+          }
+          if (err && err.name && err.name !== "NotAllowedError") msg = "Playback could not start: " + err.name;
+          showStatus(msg);
+          updateButtons();
+        });
+      }
+    } catch(e) {
+      showStatus("Playback could not start: " + (e && e.message ? e.message : e));
+    }
+  }
+  function togglePlay() {
+    if (player.paused) playNow();
+    else player.pause();
+    updateButtons();
+  }
+  function reloadAt(pos) {
+    if (!originalUrl) return;
+    var target = "/watch?url=" + encodeURIComponent(originalUrl) +
+      "&mode=ogv&seek=" + Math.max(0, Math.floor(pos));
+    if (quality) target += "&quality=" + encodeURIComponent(quality);
+    if (profile) target += "&profile=" + encodeURIComponent(profile);
+    window.location.href = target;
+  }
+  function bump(delta) {
+    if (isFinite(player.duration) && player.duration > 0) {
+      player.currentTime = Math.max(0, Math.min(player.duration - 1, player.currentTime + delta));
+    } else {
+      reloadAt(seekS + (player.currentTime || 0) + delta);
+    }
+  }
+  function reveal() {
+    document.body.classList.remove("hidden-ui");
+    clearTimeout(hideTimer);
+    hideTimer = setTimeout(function () { document.body.classList.add("hidden-ui"); }, 3500);
+  }
+
+  playBtn.addEventListener("click", togglePlay);
+  ctlPlay.addEventListener("click", togglePlay);
+  stage.addEventListener("click", function () { reveal(); });
+  document.getElementById("back15").addEventListener("click", function () { bump(-15); });
+  document.getElementById("fwd15").addEventListener("click", function () { bump(15); });
+  document.getElementById("restart").addEventListener("click", function () { reloadAt(0); });
+  player.addEventListener("play", updateButtons);
+  player.addEventListener("playing", function () { clearStatus(); updateButtons(); });
+  player.addEventListener("pause", updateButtons);
+  player.addEventListener("ended", updateButtons);
+  player.addEventListener("error", function () {
+    diagnoseFailure("OGV playback failed. Try MP4 or MJPEG fallback for this source.");
+  });
+  window.addEventListener("unhandledrejection", function (event) {
+    var reason = event && event.reason;
+    if (reason && reason.name === "NotAllowedError") {
+      showStatus("Tap Play to start. This browser blocks autoplay until a user gesture.");
+      if (event.preventDefault) event.preventDefault();
+      return;
+    }
+    if (reason && reason.message && reason.message.indexOf("error streaming") !== -1) {
+      diagnoseFailure("OGV network stream failed while opening.");
+      if (event.preventDefault) event.preventDefault();
+    }
+  });
+  window.addEventListener("click", reveal, true);
+  window.addEventListener("touchstart", reveal, true);
+
+  setInterval(function () {
+    var now = seekS + (player.currentTime || 0);
+    elapsed.textContent = fmt(now);
+    if (isFinite(player.duration) && player.duration > 0) {
+      fill.style.width = Math.max(0, Math.min(100, (player.currentTime / player.duration) * 100)) + "%";
+    }
+  }, 500);
+
+  showStatus("Tap Play to start.");
+  reveal();
+})();
+</script>
+</body>
+</html>"""
+
+
 def render_status_page() -> str:
     streams = registry.all_streams()
     if not streams:
@@ -4002,6 +4449,14 @@ def render_status_page() -> str:
             .replace("{{quality}}", str(FFMPEG_QUALITY))
             .replace("{{width}}", str(STREAM_WIDTH))
             .replace("{{height}}", str(STREAM_HEIGHT))
+            .replace("{{mp4_width}}", str(MP4_WIDTH))
+            .replace("{{mp4_height}}", str(MP4_HEIGHT))
+            .replace("{{mp4_bitrate}}", MP4_VIDEO_BITRATE)
+            .replace("{{ogv_width}}", str(OGV_WIDTH))
+            .replace("{{ogv_height}}", str(OGV_HEIGHT))
+            .replace("{{ogv_fps}}", str(OGV_FPS))
+            .replace("{{h264_encoder}}", _select_h264_encoder())
+            .replace("{{hwaccel}}", " ".join(_ffmpeg_hwaccel_args()) or "none")
             .replace("{{max_streams}}", str(MAX_STREAMS))
             .replace("{{audio_delay_ms}}", str(AUDIO_DELAY_MS))
             .replace("{{local_media_video_delay_ms}}", str(LOCAL_MEDIA_VIDEO_DELAY_MS))
@@ -4036,6 +4491,28 @@ def render_mp4_page(direct_url: str, error_msg: str = "", stream_title: str = ""
             .replace("{{error_msg}}", error_msg))
 
 
+def render_ogv_page(
+    stream_url: str,
+    original_url: str = "",
+    error_msg: str = "",
+    stream_title: str = "",
+    quality: int | None = None,
+    seek_s: int = 0,
+    profile: str | None = None,
+) -> str:
+    safe_title = (stream_title or "OGV stream").replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+    safe_error = (error_msg or "").replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+    return (OGV_WATCH_HTML
+            .replace("{{stream_url_json}}", json.dumps(stream_url))
+            .replace("{{original_url_json}}", json.dumps(original_url))
+            .replace("{{stream_title}}", safe_title)
+            .replace("{{error_msg}}", safe_error)
+            .replace("{{error_msg_json}}", json.dumps(error_msg or ""))
+            .replace("{{video_quality_json}}", json.dumps(str(quality or "")))
+            .replace("{{profile_json}}", json.dumps(profile or ""))
+            .replace("{{seek_s}}", str(seek_s)))
+
+
 # ── HTTP handler ──────────────────────────────────────────────────────────────
 class Handler(BaseHTTPRequestHandler):
     disable_nagle_algorithm = True  # TCP_NODELAY — eliminates inter-frame buffering delay
@@ -4052,15 +4529,24 @@ class Handler(BaseHTTPRequestHandler):
 
     @staticmethod
     def _parse_quality(raw_quality: str | None) -> int | None:
-        if raw_quality is None or raw_quality == "":
+        if raw_quality is None or raw_quality == "" or raw_quality == "auto":
             return None
         try:
             quality = int(raw_quality)
         except ValueError:
-            raise ValueError("quality must be one of: 144,240,360,480,720,1080")
-        if quality not in {144, 240, 360, 480, 720, 1080}:
-            raise ValueError("quality must be one of: 144,240,360,480,720,1080")
+            raise ValueError("quality must be one of: auto,144,240,360,480,720,1080,1440,2160")
+        if quality not in QUALITY_LEVELS:
+            raise ValueError("quality must be one of: auto,144,240,360,480,720,1080,1440,2160")
         return quality
+
+    @staticmethod
+    def _parse_profile(raw_profile: str | None) -> str:
+        profile = (raw_profile or OGV_DEFAULT_PROFILE or "auto").strip().lower()
+        if profile in ("", "auto", "default"):
+            return profile or "auto"
+        if profile not in TRANSCODE_PROFILES:
+            raise ValueError("profile must be one of: auto,default,360,480,720,1080,1440,2160")
+        return profile
 
     @staticmethod
     def _parse_sync_ms(raw_sync: str | None, default_ms: int | None = None) -> int:
@@ -4126,7 +4612,10 @@ class Handler(BaseHTTPRequestHandler):
         qs     = parse_qs(parsed.query)
         path   = parsed.path.rstrip("/") or "/"
 
-        if path == "/":
+        if path.startswith("/ogv-dist/"):
+            self._serve_ogv_asset(path)
+
+        elif path == "/":
             html = render_status_page()
             self._html(html)
 
@@ -4180,8 +4669,37 @@ class Handler(BaseHTTPRequestHandler):
             if not raw_url:
                 self._error(400, "Missing ?url= parameter")
                 return
+            raw_quality = qs.get("quality", [None])[0]
+            try:
+                quality = self._parse_quality(raw_quality)
+                profile = self._parse_profile(qs.get("profile", [None])[0])
+            except ValueError as e:
+                self._error(400, str(e))
+                return
             stream_url = unquote(raw_url)
-            self._serve_fmp4_direct(stream_url)
+            self._serve_fmp4_direct(stream_url, profile=profile, quality=quality)
+
+        elif path == "/stream_ogv":
+            raw_url = qs.get("url", [None])[0]
+            if not raw_url:
+                self._error(400, "Missing ?url= parameter")
+                return
+            raw_quality = qs.get("quality", [None])[0]
+            try:
+                quality = self._parse_quality(raw_quality)
+                profile = self._parse_profile(qs.get("profile", [None])[0])
+            except ValueError as e:
+                self._error(400, str(e))
+                return
+            try:
+                seek_s = max(0.0, float(qs.get("seek", [0])[0] or 0))
+            except (ValueError, TypeError):
+                seek_s = 0.0
+            stream_url = unquote(raw_url)
+            if qs.get("diagnostic", ["0"])[0] == "1":
+                self._serve_ogv_diagnostic(stream_url, quality=quality, seek_s=seek_s, profile=profile)
+                return
+            self._serve_ogv_direct(stream_url, quality=quality, seek_s=seek_s, profile=profile)
 
         elif path == "/file_serve":
             raw_path = qs.get("path", [None])[0]
@@ -4234,9 +4752,14 @@ class Handler(BaseHTTPRequestHandler):
                 stream.title = os.path.splitext(os.path.basename(local_file))[0]
             if seek_s > 0:
                 stream.seek_s = float(seek_s)
-            local_mode = (qs.get("mode", ["mjpeg"])[0] or "mjpeg").lower()
-            if local_mode not in ("mjpeg", "mp4", "audio"):
-                local_mode = "mjpeg"
+            local_mode = (qs.get("mode", ["ogv"])[0] or "ogv").lower()
+            if local_mode not in ("mjpeg", "mp4", "ogv", "audio"):
+                local_mode = "ogv"
+            try:
+                profile = self._parse_profile(qs.get("profile", [None])[0])
+            except ValueError as e:
+                self._error(400, str(e))
+                return
 
             if local_mode == "mp4":
                 vcodec, acodec = _probe_local_codecs(local_file)
@@ -4251,8 +4774,13 @@ class Handler(BaseHTTPRequestHandler):
                     vlog = f"video:{vcodec or '?'}→{'copy' if video_ok else 'h264'}"
                     alog = f"audio:{acodec or '?'}→{'copy' if audio_ok else 'aac'}"
                     log.info(f"MP4 {fname}: {vlog}, {alog} (transcoding)")
-                    mp4_url = "/stream_fmp4?url=" + quote(file_url, safe="")
+                    mp4_url = "/stream_fmp4?url=" + quote(file_url, safe="") + "&profile=" + quote(profile, safe="")
                 self._html(render_mp4_page(mp4_url))
+                return
+
+            if local_mode == "ogv":
+                ogv_url = "/stream_ogv?url=" + quote(file_url, safe="") + f"&seek={int(seek_s)}&profile=" + quote(profile, safe="")
+                self._html(render_ogv_page(ogv_url, original_url=file_url, stream_title=stream.title, seek_s=int(seek_s), profile=profile))
                 return
 
             if local_mode == "audio":
@@ -4312,12 +4840,20 @@ class Handler(BaseHTTPRequestHandler):
                     ch = next((c for c in pluto_cache._by_lang.get(lang, []) if c.get("id") == channel_id), None)
                 if ch:
                     stream.title = ch["name"]
-            pluto_mode = (qs.get("mode", ["mjpeg"])[0] or "mjpeg").lower()
-            if pluto_mode not in ("mjpeg", "mp4", "audio"):
-                pluto_mode = "mjpeg"
+            pluto_mode = (qs.get("mode", ["ogv"])[0] or "ogv").lower()
+            if pluto_mode not in ("mjpeg", "mp4", "ogv", "audio"):
+                pluto_mode = "ogv"
+            try:
+                profile = self._parse_profile(qs.get("profile", [None])[0])
+            except ValueError as e:
+                self._error(400, str(e))
+                return
             if pluto_mode == "mp4":
-                direct_url, err = _resolve_mp4_url(pluto_url, None)
+                direct_url, err = _resolve_mp4_url(pluto_url, None, profile=profile)
                 self._html(render_mp4_page(direct_url, error_msg=err, stream_title=stream.title))
+            elif pluto_mode == "ogv":
+                ogv_url = "/stream_ogv?url=" + quote(pluto_url, safe="") + "&profile=" + quote(profile, safe="")
+                self._html(render_ogv_page(ogv_url, original_url=pluto_url, stream_title=stream.title, profile=profile))
             elif pluto_mode == "audio":
                 stream.audio_only = True
                 self._html(render_audio_page(stream.id, sync_ms))
@@ -4364,12 +4900,17 @@ class Handler(BaseHTTPRequestHandler):
             except ValueError as e:
                 self._error(400, str(e))
                 return
-            mode = (qs.get("mode", ["mjpeg"])[0] or "mjpeg").lower()
-            if mode not in ("mjpeg", "mp4", "audio"):
-                mode = "mjpeg"
+            mode = (qs.get("mode", ["ogv"])[0] or "ogv").lower()
+            if mode not in ("mjpeg", "mp4", "ogv", "audio"):
+                mode = "ogv"
+            try:
+                profile = self._parse_profile(qs.get("profile", [None])[0])
+            except ValueError as e:
+                self._error(400, str(e))
+                return
 
             if mode == "mp4":
-                direct_url, err = _resolve_mp4_url(video_url, quality)
+                direct_url, err = _resolve_mp4_url(video_url, quality, profile=profile)
                 self._html(render_mp4_page(direct_url, error_msg=err))
                 return
 
@@ -4377,6 +4918,22 @@ class Handler(BaseHTTPRequestHandler):
                 seek_s = max(0.0, float(qs.get("seek", [0])[0] or 0))
             except (ValueError, TypeError):
                 seek_s = 0.0
+
+            if mode == "ogv":
+                ogv_url = "/stream_ogv?url=" + quote(video_url, safe="") + f"&seek={int(seek_s)}"
+                if quality:
+                    ogv_url += f"&quality={quality}"
+                if profile:
+                    ogv_url += "&profile=" + quote(profile, safe="")
+                self._html(render_ogv_page(
+                    ogv_url,
+                    original_url=video_url,
+                    quality=quality,
+                    seek_s=int(seek_s),
+                    profile=profile,
+                ))
+                return
+
             registry.cleanup_done()
             stream = registry.get_or_create(
                 video_url,
@@ -4680,8 +5237,48 @@ class Handler(BaseHTTPRequestHandler):
             "streams": streams,
         })
 
-    def _serve_fmp4_direct(self, url: str):
+    def _serve_ogv_asset(self, request_path: str):
+        name = os.path.basename(unquote(request_path))
+        if not name:
+            self._error(404, "Not found")
+            return
+        asset_path = os.path.abspath(os.path.join(OGV_DIST_DIR, name))
+        if not asset_path.startswith(os.path.abspath(OGV_DIST_DIR) + os.sep):
+            self._error(403, "Forbidden")
+            return
+        if not os.path.isfile(asset_path):
+            self._error(404, "Not found")
+            return
+        if name.endswith(".wasm"):
+            mime = "application/wasm"
+        elif name.endswith(".js"):
+            mime = "application/javascript"
+        elif name.endswith(".txt") or name in {"COPYING", "README.md"}:
+            mime = "text/plain; charset=utf-8"
+        else:
+            mime = "application/octet-stream"
+        try:
+            size = os.path.getsize(asset_path)
+            self.send_response(200)
+            self.send_header("Content-Type", mime)
+            self.send_header("Content-Length", str(size))
+            self.send_header("Cache-Control", "public, max-age=86400")
+            self.end_headers()
+            with open(asset_path, "rb") as f:
+                while True:
+                    chunk = f.read(65536)
+                    if not chunk:
+                        break
+                    self.wfile.write(chunk)
+        except (BrokenPipeError, ConnectionResetError):
+            pass
+
+    def _serve_fmp4_direct(self, url: str, profile: str | None = None, quality: int | None = None):
         """Remux/transcode a live stream to fragmented MP4 for native browser <video> playback."""
+        settings = _profile_settings(profile, quality)
+        mp4_width = settings["width"] if profile else MP4_WIDTH
+        mp4_height = settings["height"] if profile else MP4_HEIGHT
+        mp4_bitrate = settings.get("mp4_bitrate", MP4_VIDEO_BITRATE) if profile else MP4_VIDEO_BITRATE
         # For local files, probe codecs to skip unnecessary transcoding
         video_args: list[str]
         audio_args: list[str]
@@ -4692,27 +5289,29 @@ class Handler(BaseHTTPRequestHandler):
                 video_args = ["-c:v", "copy"]
                 vlog = f"video:{vcodec}→copy"
             else:
-                video_args = ["-c:v", "libx264", "-preset", "ultrafast", "-tune", "zerolatency", "-crf", "23"]
-                vlog = f"video:{vcodec or '?'}→h264"
+                video_args = _h264_video_args(mp4_width, mp4_height, mp4_bitrate)
+                vlog = f"video:{vcodec or '?'}→{_select_h264_encoder()} {mp4_width}x{mp4_height}"
             if acodec in ("aac", "mp3", ""):
                 audio_args = ["-c:a", "copy"] if acodec else []
                 alog = f"audio:{acodec or 'none'}→copy"
             else:
-                audio_args = ["-c:a", "aac", "-b:a", "192k", "-ar", "48000", "-ac", "2"]
+                audio_args = ["-c:a", "aac", "-b:a", MP4_AUDIO_BITRATE, "-ar", "48000", "-ac", "2"]
                 alog = f"audio:{acodec}→aac"
             log.info(f"fMP4 {fname}: {vlog}, {alog}")
         else:
-            video_args = ["-c:v", "libx264", "-preset", "ultrafast", "-tune", "zerolatency", "-crf", "23"]
-            audio_args = ["-c:a", "aac", "-b:a", "192k", "-ar", "48000", "-ac", "2"]
+            video_args = _h264_video_args(mp4_width, mp4_height, mp4_bitrate)
+            audio_args = ["-c:a", "aac", "-b:a", MP4_AUDIO_BITRATE, "-ar", "48000", "-ac", "2"]
 
         ff_cmd = [
             "ffmpeg",
             "-loglevel", "error",
+            *_ffmpeg_hwaccel_args(),
             *_direct_input_args(url),
             "-i", _ffmpeg_input_target(url),
             *video_args,
             *audio_args,
             "-movflags", "frag_keyframe+empty_moov+default_base_moof",
+            "-frag_duration", "1000000",
             "-f", "mp4",
             "pipe:1",
         ]
@@ -4731,6 +5330,224 @@ class Handler(BaseHTTPRequestHandler):
                 if not chunk:
                     break
                 self.wfile.write(chunk)
+                self.wfile.flush()
+        except (BrokenPipeError, ConnectionResetError):
+            pass
+        finally:
+            if ff_proc and ff_proc.poll() is None:
+                try:
+                    ff_proc.terminate()
+                except Exception:
+                    pass
+
+    @staticmethod
+    def _read_process_startup(proc: subprocess.Popen, timeout_s: float = 15.0) -> tuple[bytes, str]:
+        """Return the first stdout chunk plus any early stderr, without hanging forever."""
+        if proc.stdout is None:
+            return b"", "process has no stdout pipe"
+
+        stdout_fd = proc.stdout.fileno()
+        stderr_fd = proc.stderr.fileno() if proc.stderr is not None else None
+        fds = [stdout_fd]
+        if stderr_fd is not None:
+            fds.append(stderr_fd)
+
+        out_chunks: list[bytes] = []
+        err_chunks: list[bytes] = []
+        try:
+            os.set_blocking(stdout_fd, False)
+            if stderr_fd is not None:
+                os.set_blocking(stderr_fd, False)
+            deadline = time.time() + timeout_s
+            while time.time() < deadline and fds:
+                wait_s = max(0.05, min(0.25, deadline - time.time()))
+                ready, _, _ = select.select(fds, [], [], wait_s)
+                if not ready:
+                    if proc.poll() is not None:
+                        break
+                    continue
+                for fd in ready:
+                    try:
+                        data = os.read(fd, 65536)
+                    except BlockingIOError:
+                        continue
+                    except OSError:
+                        if fd in fds:
+                            fds.remove(fd)
+                        continue
+                    if not data:
+                        if fd in fds:
+                            fds.remove(fd)
+                        continue
+                    if fd == stdout_fd:
+                        out_chunks.append(data)
+                    else:
+                        err_chunks.append(data)
+                if out_chunks:
+                    break
+                if proc.poll() is not None and stdout_fd not in fds:
+                    break
+        finally:
+            try:
+                os.set_blocking(stdout_fd, True)
+            except Exception:
+                pass
+            if stderr_fd is not None:
+                try:
+                    os.set_blocking(stderr_fd, True)
+                except Exception:
+                    pass
+
+        err_text = b"".join(err_chunks).decode("utf-8", errors="replace")
+        return b"".join(out_chunks), err_text
+
+    @staticmethod
+    def _drain_pipe(pipe):
+        try:
+            while pipe.read(4096):
+                pass
+        except Exception:
+            pass
+
+    def _serve_ogv_diagnostic(self, url: str, quality: int | None = None, seek_s: float = 0.0, profile: str | None = None):
+        """Run the OGV resolver/transcoder briefly and return a JSON diagnosis."""
+        input_url, err, input_headers = _resolve_ffmpeg_input_url(url, quality)
+        if not input_url:
+            err = _short_error(err or "yt-dlp could not resolve a stream URL")
+            log.warning("OGV resolve failed url=%s quality=%s err=%s", url[:180], quality, err)
+            self._json({"ok": False, "stage": "resolve", "error": err, "http_status": 502})
+            return
+
+        ff_cmd = _build_ogv_ffmpeg_cmd(
+            input_url,
+            seek_s=seek_s,
+            output="pipe:1",
+            duration_limit_s=2,
+            input_headers=input_headers,
+            profile=profile,
+            source_quality=quality,
+        )
+        try:
+            r = subprocess.run(
+                ff_cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                timeout=18,
+            )
+        except subprocess.TimeoutExpired as e:
+            err = _short_error((e.stderr or b"").decode("utf-8", errors="replace") or "ffmpeg timed out during OGV diagnostic")
+            log.warning("OGV diagnostic timed out url=%s err=%s", url[:180], err)
+            self._json({"ok": False, "stage": "ffmpeg", "error": err, "http_status": 502})
+            return
+        except Exception as e:
+            err = _short_error(str(e))
+            log.warning("OGV diagnostic failed url=%s err=%s", url[:180], err)
+            self._json({"ok": False, "stage": "ffmpeg", "error": err, "http_status": 502})
+            return
+
+        has_ogg_header = r.stdout.startswith(b"OggS")
+        if r.returncode != 0 or not has_ogg_header:
+            err = _short_error(
+                r.stderr.decode("utf-8", errors="replace")
+                or f"ffmpeg produced {len(r.stdout)} bytes but no Ogg stream header"
+            )
+            log.warning(
+                "OGV diagnostic failed rc=%s ogg=%s url=%s err=%s",
+                r.returncode,
+                has_ogg_header,
+                url[:180],
+                err,
+            )
+            self._json({
+                "ok": False,
+                "stage": "ffmpeg",
+                "returncode": r.returncode,
+                "bytes": len(r.stdout),
+                "error": err,
+                "http_status": 502,
+            })
+            return
+
+        settings = _profile_settings(profile, quality)
+        self._json({
+            "ok": True,
+            "stage": "ready",
+            "bytes": len(r.stdout),
+            "settings": {
+                "profile": settings["name"],
+                "width": settings["width"],
+                "height": settings["height"],
+                "fps": settings["fps"],
+                "video_quality": settings["ogv_q"],
+                "audio_bitrate": settings["audio"],
+            },
+        })
+
+    def _serve_ogv_direct(self, url: str, quality: int | None = None, seek_s: float = 0.0, profile: str | None = None):
+        """Transcode a source to Ogg/Theora/Vorbis for ogv.js playback."""
+        ff_proc: subprocess.Popen | None = None
+        first_chunk = b""
+        last_err = ""
+        try:
+            for attempt in range(1, 3):
+                input_url, err, input_headers = _resolve_ffmpeg_input_url(url, quality)
+                if not input_url:
+                    last_err = _short_error(err or "yt-dlp could not resolve a stream URL")
+                    log.warning("OGV resolve failed attempt=%s url=%s quality=%s err=%s", attempt, url[:180], quality, last_err)
+                    time.sleep(0.4)
+                    continue
+
+                ff_cmd = _build_ogv_ffmpeg_cmd(
+                    input_url,
+                    seek_s=seek_s,
+                    input_headers=input_headers,
+                    profile=profile,
+                    source_quality=quality,
+                )
+                ff_proc = subprocess.Popen(
+                    ff_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE
+                )
+                first_chunk, startup_err = self._read_process_startup(ff_proc, timeout_s=15.0)
+                if first_chunk:
+                    if not first_chunk.startswith(b"OggS"):
+                        log.warning("OGV ffmpeg first bytes did not start with OggS url=%s", url[:180])
+                    break
+
+                if ff_proc.poll() is None:
+                    try:
+                        ff_proc.terminate()
+                        ff_proc.wait(timeout=3)
+                    except Exception:
+                        pass
+                rc = ff_proc.poll()
+                last_err = _short_error(startup_err or f"ffmpeg produced no Ogg data before startup timeout (rc={rc})")
+                log.warning("OGV ffmpeg startup failed attempt=%s rc=%s url=%s err=%s", attempt, rc, url[:180], last_err)
+                ff_proc = None
+                time.sleep(0.5)
+
+            if not first_chunk or ff_proc is None:
+                self._error(502, f"OGV ffmpeg startup failed: {last_err or 'no Ogg data produced'}")
+                return
+
+            if ff_proc.stderr is not None:
+                threading.Thread(target=self._drain_pipe, args=(ff_proc.stderr,), daemon=True).start()
+
+            self.send_response(200)
+            self.send_header("Content-Type", "video/ogg")
+            self.send_header("Cache-Control", "no-cache, no-store")
+            self.send_header("Connection", "keep-alive")
+            duration_s = _fetch_duration_s(url)
+            if duration_s:
+                self.send_header("X-Content-Duration", str(duration_s))
+            self.end_headers()
+            self.wfile.write(first_chunk)
+            self.wfile.flush()
+            while True:
+                chunk = ff_proc.stdout.read(65536)
+                if not chunk:
+                    break
+                self.wfile.write(chunk)
+                self.wfile.flush()
         except (BrokenPipeError, ConnectionResetError):
             pass
         finally:
@@ -5232,6 +6049,8 @@ def main():
     log.info(f"  Listening on http://{HOST}:{PORT}")
     log.info(f"  FPS={MJPEG_FPS}  Quality={FFMPEG_QUALITY}  "
              f"Res={STREAM_WIDTH}×{STREAM_HEIGHT}  MaxStreams={MAX_STREAMS}")
+    log.info(f"  MP4 encoder={_select_h264_encoder()}  HW accel={' '.join(_ffmpeg_hwaccel_args()) or 'none'}")
+    log.info(f"  OGV default profile={OGV_DEFAULT_PROFILE}  base={OGV_WIDTH}×{OGV_HEIGHT}@{OGV_FPS}")
     log.info("═" * 52)
 
     pluto_cache.start_background_refresh()

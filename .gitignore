@@ -11,3 +11,5 @@ sample.m3u8
 *.m3u8
 *.m3u
 *.local.json
+ogv-dist/
+config/*

@@ -33,6 +33,13 @@ import requests
 BROWSERS = ["chrome", "chromium", "firefox", "brave", "edge", "opera", "safari"]
 INNERTUBE_URL = "https://www.youtube.com/youtubei/v1/browse"
 CLIENT_VERSION = "2.20240101.00.00"
+SUBS_BROWSE_IDS = ("FEsubscriptions", "FEchannels")
+AUTH_COOKIE_NAMES = (
+    "SAPISID",
+    "__Secure-3PAPISID",
+    "APISID",
+    "__Secure-1PAPISID",
+)
 
 
 def cookies_from_browser(browser: str) -> dict[str, str]:
@@ -50,29 +57,79 @@ def cookies_from_file(path: Path) -> dict[str, str]:
     return {c.name: c.value for c in jar if "youtube.com" in c.domain}
 
 
+def auth_cookie_value(cookies: dict[str, str]) -> str:
+    for name in AUTH_COOKIE_NAMES:
+        value = cookies.get(name, "")
+        if value:
+            return value
+    return ""
+
+
+def auth_cookie_names_present(cookies: dict[str, str]) -> list[str]:
+    return [name for name in AUTH_COOKIE_NAMES if cookies.get(name, "")]
+
+
 def make_headers(cookies: dict[str, str]) -> dict[str, str]:
-    sapisid = cookies.get("SAPISID", "")
-    ts = str(int(time.time()))
-    h = hashlib.sha1(f"{ts} {sapisid} https://www.youtube.com".encode()).hexdigest()
-    return {
+    headers = {
         "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
-        "Authorization": f"SAPISIDHASH {ts}_{h}",
         "X-Origin": "https://www.youtube.com",
         "X-YouTube-Client-Name": "1",
         "X-YouTube-Client-Version": CLIENT_VERSION,
         "Content-Type": "application/json",
     }
+    sid = auth_cookie_value(cookies)
+    if sid:
+        ts = str(int(time.time()))
+        h = hashlib.sha1(f"{ts} {sid} https://www.youtube.com".encode()).hexdigest()
+        headers["Authorization"] = f"SAPISIDHASH {ts}_{h}"
+    headers["X-Goog-AuthUser"] = "0"
+    return headers
 
 
-def innertube_browse(session: requests.Session, cookies: dict, headers: dict, token: str | None = None) -> dict:
+def innertube_browse(
+    session: requests.Session,
+    cookies: dict,
+    headers: dict,
+    browse_id: str,
+    token: str | None = None,
+) -> dict:
     body: dict = {"context": {"client": {"clientName": "WEB", "clientVersion": CLIENT_VERSION}}}
     if token:
         body["continuation"] = token
     else:
-        body["browseId"] = "FEchannels"
-    resp = session.post(INNERTUBE_URL, cookies=cookies, headers=headers, json=body, timeout=30)
-    resp.raise_for_status()
-    return resp.json()
+        body["browseId"] = browse_id
+
+    def _post(req_headers: dict[str, str]) -> requests.Response:
+        return session.post(INNERTUBE_URL, cookies=cookies, headers=req_headers, json=body, timeout=30)
+
+    resp = _post(headers)
+
+    # Safari and some Google account cookie combinations may not expose the
+    # expected SAPISID cookie. If the authenticated request fails hard, retry
+    # once without Authorization so we can still succeed with a less strict
+    # session shape.
+    if resp.status_code >= 500 and headers.get("Authorization"):
+        retry_headers = dict(headers)
+        retry_headers.pop("Authorization", None)
+        resp = _post(retry_headers)
+
+    if resp.status_code != 200:
+        detail = resp.text.strip()
+        if len(detail) > 500:
+            detail = detail[:500] + "…"
+        raise RuntimeError(
+            f"YouTube browse failed with HTTP {resp.status_code}: {detail or '(empty response)'}"
+        )
+
+    try:
+        return resp.json()
+    except ValueError as exc:
+        detail = resp.text.strip()
+        if len(detail) > 500:
+            detail = detail[:500] + "…"
+        raise RuntimeError(
+            f"YouTube browse returned invalid JSON: {detail or '(empty response)'}"
+        ) from exc
 
 
 def extract_channels_and_token(data: dict) -> tuple[list[dict], str | None]:
@@ -80,10 +137,19 @@ def extract_channels_and_token(data: dict) -> tuple[list[dict], str | None]:
 
     def walk(obj):
         if isinstance(obj, dict):
-            if "channelRenderer" in obj:
-                r = obj["channelRenderer"]
+            renderer = None
+            for key in ("channelRenderer", "gridChannelRenderer", "subscriptionChannelRenderer"):
+                if key in obj:
+                    renderer = obj[key]
+                    break
+            if renderer is not None:
+                r = renderer
                 chan_id = r.get("channelId", "")
                 name = r.get("title", {}).get("simpleText", "")
+                if not name:
+                    runs = r.get("title", {}).get("runs", [])
+                    if runs:
+                        name = "".join(run.get("text", "") for run in runs)
                 if chan_id and name:
                     channels.append({"name": name, "url": f"https://www.youtube.com/channel/{chan_id}"})
             else:
@@ -122,28 +188,35 @@ def fetch_subscriptions(cookies: dict[str, str]) -> list[dict]:
     session = requests.Session()
     headers = make_headers(cookies)
 
-    all_channels: list[dict] = []
-    seen: set[str] = set()
-    token = None
-    page = 0
+    for browse_id in SUBS_BROWSE_IDS:
+        all_channels: list[dict] = []
+        seen: set[str] = set()
+        token = None
+        page = 0
 
-    while True:
-        data = innertube_browse(session, cookies, headers, token)
-        channels, token = extract_channels_and_token(data)
+        while True:
+            data = innertube_browse(session, cookies, headers, browse_id, token)
+            channels, token = extract_channels_and_token(data)
 
-        for ch in channels:
-            if ch["url"] not in seen:
-                seen.add(ch["url"])
-                all_channels.append(ch)
+            for ch in channels:
+                if ch["url"] not in seen:
+                    seen.add(ch["url"])
+                    all_channels.append(ch)
 
-        page += 1
-        print(f"  Page {page}: {len(all_channels)} channels so far…", end="\r")
+            page += 1
+            print(
+                f"  {browse_id} page {page}: {len(all_channels)} channels so far…",
+                end="\r",
+            )
 
-        if not token:
-            break
+            if all_channels or not token:
+                break
 
-    print()
-    return sorted(all_channels, key=lambda c: c["name"].lower())
+        print()
+        if all_channels:
+            return sorted(all_channels, key=lambda c: c["name"].lower())
+
+    return []
 
 
 def main():
@@ -175,10 +248,32 @@ def main():
         cookies = cookies_from_browser(args.browser)
 
     print("Fetching subscriptions from YouTube…")
+    auth_names = auth_cookie_names_present(cookies)
+    if not auth_names:
+        print(
+            "⚠ No YouTube auth cookies were found in that browser profile.",
+            file=sys.stderr,
+        )
+        print(
+            "  Try a different browser, or export cookies.txt and use --cookies.",
+            file=sys.stderr,
+        )
+    else:
+        print(f"  Using auth cookies: {', '.join(auth_names)}")
     channels = fetch_subscriptions(cookies)
 
     if not channels:
-        print("‼ No channels found — are you logged in to YouTube in that browser?", file=sys.stderr)
+        if args.browser == "safari":
+            print(
+                "‼ Safari did not return any subscription channels. "
+                "Export cookies.txt and retry with --cookies.",
+                file=sys.stderr,
+            )
+        else:
+            print(
+                "‼ No channels found — are you logged in to YouTube in that browser?",
+                file=sys.stderr,
+            )
         sys.exit(1)
 
     out = {

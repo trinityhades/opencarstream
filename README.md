@@ -1,7 +1,7 @@
 # OpenCarStream - MJPEG Streamer for the integrated browser in your car
 
-Stream any video to your Tesla browser via MJPEG.  
-No `<video>` element inside.
+Stream videos to your Tesla browser with OGV.js for Tesla-friendly playback,
+native MP4 when it works well, and MJPEG as a last-resort fallback.
 Supports YouTube, Twitch, X/Twitter, Pluto TV, IPTV lists, and more.
 
 ---
@@ -18,9 +18,7 @@ Tesla browser
 [streamer container]
   yt-dlp stdout
     │ pipe
-  ffmpeg stdin → JPEG frames → multipart/x-mixed-replace
-    │
-    └──► Tesla sees a fast-updating <img> — not a <video>
+  OGV.js/Ogg for Tesla, native MP4 where possible, or MJPEG fallback
 ```
 
 ---
@@ -47,12 +45,19 @@ If Docker Hub is flaky in your region, override the Python base image source:
 PYTHON_IMAGE=mirror.gcr.io/library/python:3.12-slim docker compose up -d --build
 ```
 
+The container now installs `yt-dlp` in an architecture-safe way, so Apple
+Silicon and Intel Macs should both work without a platform override.
+
 ### 3. Test locally
 
 ```
 http://localhost:33333/health
 http://localhost:33333/
 ```
+
+If you are on Docker Desktop for macOS or Windows, this repo now uses normal
+port publishing by default so `localhost:33333` works. Host networking is only
+needed on Linux if you specifically want multicast RTP support.
 
 ### 4. Open in car browser
 
@@ -100,8 +105,8 @@ uv run sync_subscriptions.py --browser firefox
 uv run sync_subscriptions.py --browser brave
 ```
 
-yt-dlp reads your browser's cookie store directly — no export or extension
-needed. The script fetches only the channel list (not videos) and finishes
+The script reads your browser's cookie store directly — no export or extension
+needed. It fetches only the channel list (not videos) and finishes
 in a few seconds. You will see output like:
 
 ```
@@ -110,6 +115,10 @@ Fetching subscriptions from YouTube…
 ```
 
 Re-run this command whenever you follow or unfollow channels.
+
+If Safari still errors on your machine, export a `cookies.txt` file and use
+`--cookies` instead. Some Safari setups expose fewer Google auth cookies than
+Chrome or Firefox.
 
 #### Step 2 — mount it in the container
 
@@ -193,10 +202,22 @@ sudo cp /etc/letsencrypt/live/stream.yourdomain.com/privkey.pem   certs/key.pem
 | Variable              | Default               | Description                             |
 |-----------------------|-----------------------|-----------------------------------------|
 | `PORT`                | 8080                  | HTTP port inside container              |
-| `MJPEG_FPS`           | 24                    | Frames/sec sent to client               |
-| `FFMPEG_QUALITY`      | 3                     | JPEG quality: 1=best, 31=smallest       |
-| `STREAM_WIDTH`        | 1920                  | Output width (px)                       |
-| `STREAM_HEIGHT`       | 1080                  | Output height (px)                      |
+| `MJPEG_FPS`           | 12                    | Frames/sec for MJPEG fallback           |
+| `FFMPEG_QUALITY`      | 26                    | MJPEG quality: 1=best, 31=smallest      |
+| `STREAM_WIDTH`        | 854                   | MJPEG fallback width (px)               |
+| `STREAM_HEIGHT`       | 480                   | MJPEG fallback height (px)              |
+| `MP4_WIDTH`           | 1280                  | MP4 transcode width (px)                |
+| `MP4_HEIGHT`          | 720                   | MP4 transcode height (px)               |
+| `MP4_VIDEO_BITRATE`   | 1800k                 | MP4 transcode video bitrate             |
+| `MP4_AUDIO_BITRATE`   | 128k                  | MP4 transcode audio bitrate             |
+| `FFMPEG_HWACCEL`      | auto                  | Try FFmpeg decode acceleration when available |
+| `FFMPEG_H264_ENCODER` | auto                  | Use `h264_videotoolbox` if available, else `libx264` |
+| `OGV_WIDTH`           | 640                   | OGV.js transcode width (px)             |
+| `OGV_HEIGHT`          | 360                   | OGV.js transcode height (px)            |
+| `OGV_FPS`             | 24                    | OGV.js transcode frames/sec             |
+| `OGV_VIDEO_QUALITY`   | 5                     | Theora quality: higher is better/larger |
+| `OGV_AUDIO_BITRATE`   | 96k                   | Vorbis audio bitrate                    |
+| `OGV_DEFAULT_PROFILE` | auto                  | Default OGV output profile              |
 | `MAX_STREAMS`         | 3                     | Max parallel video streams              |
 | `AUDIO_DELAY_MS`      | 0                     | ms to delay video start after audio     |
 | `LOCAL_MEDIA_DIR`     | /media/videos         | Local Media folder path inside container |
@@ -204,6 +225,16 @@ sudo cp /etc/letsencrypt/live/stream.yourdomain.com/privkey.pem   certs/key.pem
 | `SUBSCRIPTIONS_FILE`  | /subscriptions.json   | Path to subscriptions JSON inside container |
 
 Override in `docker-compose.yml` under `environment:`.
+
+The web UI exposes source quality up to `1440p` and `4K`, plus an output
+profile row for debugging transcode size. `AUTO` uses browser network hints
+when available and falls back to conservative defaults.
+
+On Apple Silicon, FFmpeg hardware encoding is available only when FFmpeg itself
+exposes `h264_videotoolbox`. Docker Desktop Linux containers normally do not
+expose VideoToolbox, so the container will usually report `libx264` and
+`HW accel=none`. Running the app natively on macOS with a VideoToolbox-enabled
+FFmpeg lets the auto selector use Apple hardware encoding.
 
 ---
 
@@ -334,7 +365,9 @@ YouTube is a trademark of Google LLC, Twitch is a trademark of Twitch Interactiv
 ## Tips
 
 - **Bookmark it in Tesla**: Save `http://yourserver/` as a bookmark and use the UI
-- **Lower bandwidth**: Set `MJPEG_FPS=15` and `FFMPEG_QUALITY=6` in docker-compose.yml
+- **Best Tesla stability**: Use the default `OGV (Tesla)` mode first.
+- **Native playback**: Try `MP4 (smooth)` when the Tesla browser accepts the source.
+- **Lower fallback bandwidth**: If you must use MJPEG, keep `MJPEG_FPS=12` and `STREAM_WIDTH=854`.
 - **Update yt-dlp** (YouTube changes frequently):
   ```bash
   docker compose build --no-cache && docker compose up -d
@@ -349,7 +382,7 @@ YouTube is a trademark of Google LLC, Twitch is a trademark of Twitch Interactiv
 | Black screen in Tesla | Make sure URL ends in `/watch?url=...` not just `/` |
 | `502 Pipeline error` | yt-dlp may need updating: rebuild image |
 | `DeadlineExceeded` while pulling base image | Retry with a mirror: `PYTHON_IMAGE=mirror.gcr.io/library/python:3.12-slim docker compose build --no-cache` |
-| Stream stutters on LAN | Lower `MJPEG_FPS` to 12–15 |
+| Stream stutters on LAN | Use `OGV (Tesla)` first; try `MP4 (smooth)` next; keep MJPEG around 12 fps / 480p |
 | Can't reach from internet | Check port forwarding / firewall; try `curl http://yourserver:33333/health` from outside |
 | Container exits immediately | `docker compose logs streamer` to see the error |
 | Subscriptions panel not visible | `subscriptions.json` not mounted — check volume in docker-compose.yml |

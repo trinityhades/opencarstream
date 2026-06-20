@@ -2,7 +2,7 @@
 ARG PYTHON_IMAGE=python:3.12-slim
 FROM ${PYTHON_IMAGE} AS base
 
-# System deps: ffmpeg + curl (for yt-dlp download)
+# System deps: ffmpeg + curl (healthcheck)
 RUN apt-get update && apt-get install -y --no-install-recommends \
         ffmpeg \
         curl \
@@ -10,11 +10,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         nodejs \
     && rm -rf /var/lib/apt/lists/*
 
-# Install yt-dlp as a standalone binary (always latest)
-RUN curl -fsSL \
-    "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp_linux" \
-    -o /usr/local/bin/yt-dlp \
-    && chmod +x /usr/local/bin/yt-dlp
+# Install yt-dlp from PyPI so the image works on both arm64 and amd64.
+RUN python3 -m pip install --no-cache-dir --upgrade yt-dlp
 
 # ── Stage 2: app ──────────────────────────────────────────────────────────────
 FROM base AS app
@@ -22,6 +19,7 @@ FROM base AS app
 WORKDIR /app
 
 COPY server.py .
+COPY ogv-dist ./ogv-dist
 
 # Non-root user for security
 RUN useradd -m -u 1000 streamer
@@ -33,10 +31,22 @@ USER streamer
 # ── Runtime config (all overridable via -e / docker-compose env) ──────────────
 ENV HOST=0.0.0.0 \
     PORT=8080 \
-    MJPEG_FPS=24 \
-    FFMPEG_QUALITY=3 \
-    STREAM_WIDTH=1920 \
-    STREAM_HEIGHT=1080 \
+    MJPEG_FPS=12 \
+    FFMPEG_QUALITY=26 \
+    STREAM_WIDTH=854 \
+    STREAM_HEIGHT=480 \
+    MP4_WIDTH=1280 \
+    MP4_HEIGHT=720 \
+    MP4_VIDEO_BITRATE=1800k \
+    MP4_AUDIO_BITRATE=128k \
+    FFMPEG_HWACCEL=auto \
+    FFMPEG_H264_ENCODER=auto \
+    OGV_WIDTH=640 \
+    OGV_HEIGHT=360 \
+    OGV_FPS=24 \
+    OGV_VIDEO_QUALITY=5 \
+    OGV_AUDIO_BITRATE=96k \
+    OGV_DEFAULT_PROFILE=auto \
     MAX_STREAMS=3
 
 EXPOSE 8080
