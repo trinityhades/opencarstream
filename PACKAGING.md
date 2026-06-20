@@ -80,8 +80,8 @@ shasum -a 256 opencarstream-0.1.0.tar.gz
 Local test:
 
 ```bash
-brew install --build-from-source ./Formula/opencarstream.rb
-opencarstream serve --port 33333
+brew reinstall --build-from-source --formula trinityhades/opencarstream/opencarstream
+/opt/homebrew/opt/opencarstream/bin/opencarstream serve --port 33333
 ```
 
 The formula installs FFmpeg, Node, yt-dlp, the Python CLI, and OGV.js runtime
@@ -115,8 +115,20 @@ Users install with:
 ```bash
 brew tap trinityhades/opencarstream
 brew trust trinityhades/opencarstream
-brew install opencarstream
+brew install --cask opencarstream-cli
+brew install --cask opencarstream
 ```
+
+The tap also includes a formula:
+
+```bash
+brew install --formula trinityhades/opencarstream/opencarstream
+```
+
+Prefer the casks for end users. The formula is useful for source-style Homebrew
+installs and `brew services`, but it uses the same `opencarstream` command name
+as the CLI cask. If both are installed, Homebrew may report that one binary is
+shadowing the other.
 
 ## macOS Menu-Bar App
 

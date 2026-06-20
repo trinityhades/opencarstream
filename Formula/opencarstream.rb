@@ -1,6 +1,4 @@
 class Opencarstream < Formula
-  include Language::Python::Virtualenv
-
   desc "Tesla-friendly media streaming server"
   homepage "https://github.com/trinityhades/opencarstream"
   url "https://github.com/trinityhades/opencarstream/archive/refs/tags/v0.1.0.tar.gz"
@@ -15,14 +13,13 @@ class Opencarstream < Formula
   def install
     system "npm", "install", "--prefix", buildpath, "ogv", "--no-save"
     (libexec/"ogv-dist").install Dir[buildpath/"node_modules/ogv/dist/*"]
-
-    virtualenv_create(libexec, "python3.12")
-    system libexec/"bin/pip", "install", "--no-deps", "."
+    libexec.install "opencarstream", "server.py", "populate_logos.py", "sync_subscriptions.py"
 
     (bin/"opencarstream").write <<~EOS
       #!/bin/bash
       export OGV_DIST_DIR="#{libexec}/ogv-dist"
-      exec "#{libexec}/bin/opencarstream" "$@"
+      export PYTHONPATH="#{libexec}"
+      exec "#{Formula["python@3.12"].opt_bin}/python3.12" -m opencarstream "$@"
     EOS
     chmod 0755, bin/"opencarstream"
 
