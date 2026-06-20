@@ -2010,7 +2010,7 @@ LOGIN_HTML = """<!DOCTYPE html>
 </head>
 <body>
 <div class="login-container">
-  <h1>OPENCARSTREAM</h1>
+  <h1>Tesla Player</h1>
   <p class="sub">Streaming launcher for Tesla</p>
   
   <div id="error" class="error-message">{{error_msg}}</div>
