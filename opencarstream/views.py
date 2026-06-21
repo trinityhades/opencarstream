@@ -11,149 +11,213 @@ LOGIN_HTML = """<!DOCTYPE html>
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>OpenCarStream — Login</title>
+<title>OpenCarStream - Access Portal</title>
 <style>
-  @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@700;900&family=Rajdhani:wght@500;700&display=swap');
+  @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;800;900&family=Inter:wght@400;500;600&display=swap');
+  
   :root {
-    --red: #e31937;
-    --red-glow: rgba(227, 25, 55, 0.4);
-    --dark: #090909;
-    --panel: rgba(17, 17, 23, 0.75);
-    --border: rgba(37, 37, 48, 0.8);
-    --text: #e0e0ee;
-    --muted: #85859e;
-    --input-bg: rgba(13, 13, 20, 0.6);
+    --bg: #09080c;
+    --panel: rgba(20, 19, 26, 0.7);
+    --border: rgba(255, 255, 255, 0.08);
+    --accent: #ff3b5c;
+    --accent-glow: rgba(255, 59, 92, 0.3);
+    --accent-gradient: linear-gradient(135deg, #ff3b5c 0%, #d61234 100%);
+    --text: #f4f3f6;
+    --muted: #9e9ba7;
+    --input-bg: rgba(10, 9, 14, 0.8);
   }
-  @media(prefers-color-scheme:light) {
-    :root {
-      --dark: #f0f0f3;
-      --panel: rgba(255, 255, 255, 0.8);
-      --border: rgba(216, 216, 224, 0.8);
-      --text: #1a1a2e;
-      --muted: #78788f;
-      --input-bg: rgba(234, 234, 240, 0.6);
-    }
-  }
+  
   * { margin: 0; padding: 0; box-sizing: border-box; }
+  
   body {
-    background: radial-gradient(circle at center, #1b0e12 0%, var(--dark) 100%);
+    background: radial-gradient(circle at 50% 50%, #200f13 0%, var(--bg) 80%);
     color: var(--text);
-    font-family: 'Rajdhani', sans-serif;
-    font-size: 20px;
+    font-family: 'Inter', sans-serif;
     min-height: 100vh;
     display: flex;
     justify-content: center;
     align-items: center;
-    padding: 20px;
+    padding: 24px;
+    overflow: hidden;
   }
-  .login-container {
+  
+  .glow-orb {
+    position: absolute;
+    width: 350px;
+    height: 350px;
+    border-radius: 50%;
+    background: var(--accent);
+    filter: blur(120px);
+    opacity: 0.15;
+    z-index: 1;
+    pointer-events: none;
+    animation: floatGlow 12s infinite alternate ease-in-out;
+  }
+  
+  @keyframes floatGlow {
+    0% { transform: translate(-50px, -50px) scale(1); }
+    100% { transform: translate(50px, 50px) scale(1.2); }
+  }
+  
+  .login-card {
+    position: relative;
     width: 100%;
-    max-width: 420px;
+    max-width: 440px;
     background: var(--panel);
     border: 1px solid var(--border);
-    backdrop-filter: blur(14px);
-    -webkit-backdrop-filter: blur(14px);
-    border-radius: 16px;
-    padding: 40px;
-    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5), 0 0 20px rgba(227, 25, 55, 0.05);
+    backdrop-filter: blur(24px);
+    -webkit-backdrop-filter: blur(24px);
+    border-radius: 20px;
+    padding: 48px;
+    box-shadow: 0 20px 50px rgba(0, 0, 0, 0.6), 0 0 40px rgba(255, 59, 92, 0.03);
+    z-index: 10;
+    animation: cardAppear 0.8s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+  
+  @keyframes cardAppear {
+    from { opacity: 0; transform: translateY(30px) scale(0.98); }
+    to { opacity: 1; transform: translateY(0) scale(1); }
+  }
+  
+  .header-logo {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    margin-bottom: 40px;
     text-align: center;
-    animation: fadeIn 0.6s ease-out;
   }
-  @keyframes fadeIn {
-    from { opacity: 0; transform: translateY(20px); }
-    to { opacity: 1; transform: translateY(0); }
-  }
+  
   h1 {
-    font-family: 'Orbitron', monospace;
+    font-family: 'Outfit', sans-serif;
     font-weight: 900;
-    font-size: 2.2rem;
-    color: var(--red);
-    letter-spacing: .12em;
-    text-shadow: 0 0 20px var(--red-glow);
-    margin-bottom: 6px;
+    font-size: 2.4rem;
+    letter-spacing: -0.02em;
+    background: linear-gradient(135deg, #fff 30%, #a5a2b0 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    margin-bottom: 8px;
+    display: flex;
+    align-items: center;
+    gap: 4px;
   }
+  
+  h1 span.dot {
+    width: 8px;
+    height: 8px;
+    background: var(--accent);
+    border-radius: 50%;
+    display: inline-block;
+    box-shadow: 0 0 12px var(--accent);
+  }
+  
   .sub {
     color: var(--muted);
-    font-size: .85rem;
-    letter-spacing: .08em;
+    font-size: 0.85rem;
+    font-weight: 500;
+    letter-spacing: 0.06em;
     text-transform: uppercase;
-    margin-bottom: 35px;
   }
+  
   .form-group {
-    margin-bottom: 24px;
+    margin-bottom: 28px;
     text-align: left;
   }
+  
   label {
     display: block;
-    font-family: 'Orbitron', monospace;
     font-size: 0.75rem;
+    font-weight: 600;
     color: var(--muted);
-    margin-bottom: 8px;
-    letter-spacing: 0.1em;
+    margin-bottom: 10px;
+    letter-spacing: 0.08em;
     text-transform: uppercase;
   }
+  
   input[type="password"] {
     width: 100%;
     background: var(--input-bg);
     color: var(--text);
     border: 1px solid var(--border);
-    border-radius: 8px;
-    padding: 14px 16px;
-    font-size: 1.1rem;
+    border-radius: 10px;
+    padding: 16px 18px;
+    font-family: inherit;
+    font-size: 1.05rem;
     outline: none;
-    transition: all 0.3s ease;
+    transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
   }
+  
   input[type="password"]:focus {
-    border-color: var(--red);
-    box-shadow: 0 0 10px var(--red-glow);
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px var(--accent-glow);
+    background: rgba(10, 9, 14, 0.9);
   }
+  
   .error-message {
-    background: rgba(227, 25, 55, 0.12);
-    color: var(--red);
-    border: 1px solid rgba(227, 25, 55, 0.3);
-    border-radius: 8px;
-    padding: 12px;
-    font-size: 0.9rem;
-    margin-bottom: 24px;
+    background: rgba(255, 59, 92, 0.1);
+    color: var(--accent);
+    border: 1px solid rgba(255, 59, 92, 0.2);
+    border-radius: 10px;
+    padding: 14px 16px;
+    font-size: 0.85rem;
+    font-weight: 500;
+    margin-bottom: 28px;
     text-align: left;
     display: none;
+    align-items: center;
+    gap: 10px;
+    animation: shake 0.4s ease-in-out;
   }
+  
+  @keyframes shake {
+    0%, 100% { transform: translateX(0); }
+    25% { transform: translateX(-6px); }
+    75% { transform: translateX(6px); }
+  }
+  
   button {
     width: 100%;
-    background: var(--red);
+    background: var(--accent-gradient);
     color: #fff;
     border: none;
-    border-radius: 8px;
-    padding: 14px 20px;
-    font-family: 'Orbitron', monospace;
+    border-radius: 10px;
+    padding: 16px;
+    font-family: 'Outfit', sans-serif;
     font-weight: 700;
-    font-size: 0.9rem;
-    letter-spacing: 0.1em;
+    font-size: 0.95rem;
+    letter-spacing: 0.04em;
     text-transform: uppercase;
     cursor: pointer;
-    box-shadow: 0 4px 12px rgba(227, 25, 55, 0.2);
-    transition: all 0.2s ease;
+    box-shadow: 0 4px 20px rgba(255, 59, 92, 0.25);
+    transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
   }
+  
   button:hover {
-    background: #ff2a4b;
-    box-shadow: 0 6px 16px rgba(227, 25, 55, 0.4);
-    transform: translateY(-1px);
+    transform: translateY(-2px);
+    box-shadow: 0 8px 25px rgba(255, 59, 92, 0.4);
+    filter: brightness(1.1);
   }
+  
   button:active {
     transform: translateY(1px);
   }
 </style>
 </head>
 <body>
-<div class="login-container">
-  <h1>Tesla Player</h1>
-  <p class="sub">Streaming launcher for Tesla</p>
+<div class="glow-orb"></div>
+<div class="login-card">
+  <div class="header-logo">
+    <h1>OpenCarStream<span class="dot"></span></h1>
+    <p class="sub">Vehicular Streaming Portal</p>
+  </div>
   
-  <div id="error" class="error-message">{{error_msg}}</div>
+  <div id="error" class="error-message">
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+    <span>{{error_msg}}</span>
+  </div>
   
   <form method="POST" action="/login{{next_query}}">
     <div class="form-group">
-      <label for="password">Admin Password</label>
+      <label for="password">Enter Access Code</label>
       <input type="password" id="password" name="password" required autofocus placeholder="••••••••">
     </div>
     <button type="submit">Unlock Console</button>
@@ -162,447 +226,1042 @@ LOGIN_HTML = """<!DOCTYPE html>
 
 <script>
   // Show error if placeholder is replaced
-  const errText = document.getElementById("error").textContent.trim();
+  const errText = document.getElementById("error").querySelector("span").textContent.trim();
   if (errText && errText !== "{{" + "error_msg" + "}}") {
-    document.getElementById("error").style.display = "block";
+    document.getElementById("error").style.display = "flex";
   }
 </script>
 </body>
 </html>
 """
 
-
 STATUS_HTML = """<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>OpenCarStream — Streaming for Tesla vehicles</title>
+<title>OpenCarStream - Vehicular Stream Portal</title>
 <style>
-  @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@700;900&family=Rajdhani:wght@300;500&display=swap');
-  :root{--red:#e31937;--dark:#090909;--panel:#111117;--border:#252530;--text:#e0e0ee;--muted:#555568;--input-bg:#0d0d14;--thumb-bg:#1a1a24;}
-  @media(prefers-color-scheme:light){:root{--dark:#f4f4f6;--panel:#ffffff;--border:#d8d8e0;--text:#1a1a2e;--muted:#888899;--input-bg:#eaeaf0;--thumb-bg:#dcdce8;}}
-  *{margin:0;padding:0;box-sizing:border-box;}
-  body{background:var(--dark);color:var(--text);font-family:'Rajdhani',sans-serif;font-size:21px;min-height:100vh;display:flex;flex-direction:column;align-items:center;padding:24px 32px;}
-  h1{font-family:'Orbitron',monospace;font-weight:900;font-size:2.4rem;color:var(--red);letter-spacing:.12em;text-shadow:0 0 24px rgba(227,25,55,.45);margin-bottom:6px;}
-  .sub{color:var(--muted);font-size:.9rem;letter-spacing:.08em;text-transform:uppercase;margin-bottom:20px;}
-  .tabs{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:20px;width:100%;max-width:1600px;}
-  .tab-btn{font-family:'Orbitron',monospace;font-size:.8rem;letter-spacing:.08em;padding:11px 20px;border-radius:8px;border:1px solid var(--border);background:transparent;color:var(--muted);cursor:pointer;transition:all .15s;}
-  .tab-btn.active{background:var(--red);color:#fff;border-color:var(--red);}
-  .tab-panel{display:none;width:100%;max-width:1600px;}
-  .tab-panel.active{display:block;}
-  .card{background:var(--panel);border:1px solid var(--border);border-radius:12px;width:100%;padding:32px 40px;margin-bottom:24px;}
-  .card h2{font-family:'Orbitron',monospace;font-size:.95rem;letter-spacing:.15em;color:var(--muted);margin-bottom:22px;text-transform:uppercase;}
-  .usage{font-family:monospace;font-size:1rem;background:var(--input-bg);border:1px solid var(--border);border-radius:8px;padding:18px 22px;line-height:2;word-break:break-all;}
-  .usage span{color:var(--red);}
-  .stream-row{display:flex;justify-content:space-between;align-items:center;padding:14px 0;border-bottom:1px solid var(--border);}
-  .stream-row:last-child{border-bottom:none;}
-  .badge{display:inline-block;padding:4px 12px;border-radius:20px;font-size:.8rem;letter-spacing:.06em;font-family:'Orbitron',monospace;}
-  .badge.streaming{background:rgba(0,200,100,.15);color:#00a852;border:1px solid rgba(0,200,100,.3);}
-  .badge.starting{background:rgba(255,152,0,.12);color:#c97800;border:1px solid rgba(255,152,0,.3);}
-  .badge.error{background:rgba(227,25,55,.12);color:var(--red);border:1px solid rgba(227,25,55,.3);}
-  .badge.done{background:var(--input-bg);color:var(--muted);border:1px solid var(--border);}
-  .empty{color:var(--muted);font-size:1rem;font-style:italic;}
-  a{color:var(--red);text-decoration:none;}a:hover{text-decoration:underline;}
-  .env-row{display:flex;gap:28px;flex-wrap:wrap;margin-top:6px;}
-  .env-item{font-family:monospace;font-size:.9rem;color:var(--muted);}
-  .env-item b{color:var(--text);}
-  /* Feed tab */
-  .feed-controls{display:flex;gap:12px;flex-wrap:wrap;align-items:center;margin-bottom:22px;}
-  .feed-controls input{flex:1;min-width:240px;background:var(--input-bg);color:var(--text);border:1px solid var(--border);border-radius:8px;padding:12px 16px;font-family:monospace;font-size:1rem;}
-  .feed-controls button{background:var(--red);color:white;border:0;border-radius:8px;padding:12px 20px;font-family:'Orbitron',monospace;letter-spacing:.08em;cursor:pointer;white-space:nowrap;font-size:.8rem;}
-  .feed-status{color:var(--muted);font-size:.9rem;font-style:italic;margin-bottom:12px;min-height:1.4em;}
-  .feed-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:18px;}
-  .feed-card{background:var(--input-bg);border:1px solid var(--border);border-radius:10px;overflow:hidden;cursor:pointer;transition:border-color .15s;}
-  .feed-card:hover{border-color:var(--red);}
-  .feed-card-dismiss{background:none;border:none;color:var(--muted);font-size:14px;line-height:1;cursor:pointer;padding:0 0 0 6px;flex-shrink:0;}
-  .feed-card-dismiss:hover{color:var(--red);}
-  .feed-thumb{width:100%;aspect-ratio:16/9;object-fit:cover;background:var(--thumb-bg);display:block;}
-  .feed-info{padding:10px 13px;}
-  .feed-title{font-size:.9rem;line-height:1.35;color:var(--text);margin-bottom:5px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;}
-  .feed-dur{font-family:monospace;font-size:.78rem;color:var(--muted);}
-  .playback-card{padding:0;overflow:hidden;}
-  .playback-card summary{list-style:none;display:flex;align-items:center;justify-content:space-between;gap:16px;padding:22px 28px;cursor:pointer;font-family:'Orbitron',monospace;font-size:.95rem;letter-spacing:.15em;color:var(--muted);text-transform:uppercase;}
-  .playback-card summary::-webkit-details-marker{display:none;}
-  .playback-card summary::after{content:"+";font-size:1.2rem;color:var(--red);line-height:1;}
-  .playback-card[open] summary::after{content:"−";}
-  .playback-inner{padding:0 28px 24px;}
-  /* shared input style for start-stream row */
-  #yt-id{flex:1;min-width:300px;background:var(--input-bg);color:var(--text);border:1px solid var(--border);border-radius:8px;padding:12px 16px;font-family:monospace;font-size:1rem;}
-  select{background:var(--input-bg);color:var(--text);border:1px solid var(--border);border-radius:8px;padding:12px 16px;font-family:monospace;font-size:1rem;}
-  footer{margin-top:30px;color:var(--muted);font-size:.82rem;letter-spacing:.04em;text-align:center;max-width:1600px;line-height:1.6;}
-  @keyframes warning-pulse {
-    0% { transform: scale(1); opacity: 0.8; }
-    50% { transform: scale(1.15); opacity: 1; }
-    100% { transform: scale(1); opacity: 0.8; }
+  @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800;900&family=Inter:wght@400;500;600;700&display=swap');
+  
+  :root {
+    --bg: #09080c;
+    --panel: rgba(20, 19, 26, 0.7);
+    --panel-solid: #121118;
+    --border: rgba(255, 255, 255, 0.08);
+    --accent: #ff3b5c;
+    --accent-glow: rgba(255, 59, 92, 0.2);
+    --accent-gradient: linear-gradient(135deg, #ff3b5c 0%, #d61234 100%);
+    --text: #f4f3f6;
+    --text-secondary: #9e9ba7;
+    --text-muted: #5e5a66;
+    --red: var(--accent);
+    --muted: var(--text-secondary);
+    --input-bg: rgba(10, 9, 14, 0.8);
+    --thumb-bg: #1c1a24;
+  }
+  
+  :root.theme-light {
+    --bg: #f4f4f7;
+    --panel: rgba(255, 255, 255, 0.8);
+    --panel-solid: #ffffff;
+    --border: rgba(0, 0, 0, 0.08);
+    --accent: #ff3b5c;
+    --accent-glow: rgba(255, 59, 92, 0.15);
+    --accent-gradient: linear-gradient(135deg, #ff3b5c 0%, #e31937 100%);
+    --text: #1a191f;
+    --text-secondary: #5e5c66;
+    --text-muted: #9a98a0;
+    --red: var(--accent);
+    --muted: var(--text-secondary);
+    --input-bg: rgba(240, 240, 243, 0.8);
+    --thumb-bg: #e2e2ea;
+  }
+
+  :root.theme-dark {
+    --bg: #09080c;
+    --panel: rgba(20, 19, 26, 0.7);
+    --panel-solid: #121118;
+    --border: rgba(255, 255, 255, 0.08);
+    --accent: #ff3b5c;
+    --accent-glow: rgba(255, 59, 92, 0.2);
+    --accent-gradient: linear-gradient(135deg, #ff3b5c 0%, #d61234 100%);
+    --text: #f4f3f6;
+    --text-secondary: #9e9ba7;
+    --text-muted: #5e5a66;
+    --red: var(--accent);
+    --muted: var(--text-secondary);
+    --input-bg: rgba(10, 9, 14, 0.8);
+    --thumb-bg: #1c1a24;
+  }
+  
+  @media(prefers-color-scheme:light) {
+    :root:not(.theme-dark) {
+      --bg: #f4f4f7;
+      --panel: rgba(255, 255, 255, 0.8);
+      --panel-solid: #ffffff;
+      --border: rgba(0, 0, 0, 0.08);
+      --accent: #ff3b5c;
+      --accent-glow: rgba(255, 59, 92, 0.15);
+      --accent-gradient: linear-gradient(135deg, #ff3b5c 0%, #e31937 100%);
+      --text: #1a191f;
+      --text-secondary: #5e5c66;
+      --text-muted: #9a98a0;
+      --red: var(--accent);
+      --muted: var(--text-secondary);
+      --input-bg: rgba(240, 240, 243, 0.8);
+      --thumb-bg: #e2e2ea;
+    }
+  }
+  
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Inter', sans-serif;
+    font-size: 16px;
+    min-height: 100vh;
+  }
+  
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 99px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: rgba(255, 255, 255, 0.2);
+  }
+  
+  .app-container {
+    display: flex;
+    flex-direction: column;
+    min-height: 100vh;
+  }
+  
+  .sidebar {
+    background: var(--panel-solid);
+    border-right: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    padding: 36px 24px;
+    z-index: 100;
+  }
+  
+  .sidebar-brand {
+    font-family: 'Outfit', sans-serif;
+    font-weight: 900;
+    font-size: 1.6rem;
+    letter-spacing: -0.02em;
+    background: linear-gradient(135deg, var(--text) 30%, var(--text-secondary) 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    margin-bottom: 4px;
+  }
+  
+  .sidebar-brand span.dot {
+    width: 6px;
+    height: 6px;
+    background: var(--accent);
+    border-radius: 50%;
+    display: inline-block;
+    box-shadow: 0 0 10px var(--accent);
+  }
+  
+  .sidebar-sub {
+    font-family: 'Outfit', sans-serif;
+    font-size: 0.65rem;
+    font-weight: 700;
+    letter-spacing: 0.15em;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    margin-bottom: 36px;
+  }
+  
+  .sidebar-nav {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  
+  .tab-btn {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    width: 100%;
+    background: transparent;
+    border: none;
+    border-radius: 10px;
+    padding: 12px 16px;
+    color: var(--text-secondary);
+    font-family: 'Outfit', sans-serif;
+    font-size: 0.95rem;
+    font-weight: 600;
+    text-align: left;
+    cursor: pointer;
+    transition: all 0.2s ease;
+  }
+  
+  .tab-btn:hover {
+    background: rgba(255, 255, 255, 0.04);
+    color: var(--text);
+  }
+  
+  .tab-btn.active {
+    background: rgba(255, 59, 92, 0.12);
+    color: var(--accent);
+  }
+  
+  .nav-icon {
+    width: 18px;
+    height: 18px;
+    flex-shrink: 0;
+    stroke-width: 2.2;
+  }
+  
+  .weather-widget {
+    margin-top: auto;
+    background: rgba(255, 255, 255, 0.02);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 12px 16px;
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  
+  .main-content {
+    flex: 1;
+    padding: 24px;
+  }
+
+  .tab-panel {
+    display: none;
+    width: 100%;
+    max-width: 1400px;
+    animation: panelFade 0.4s ease-out;
+  }
+  
+  .tab-panel.active {
+    display: block;
+  }
+  
+  @keyframes panelFade {
+    from { opacity: 0; transform: translateY(10px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  .theme-toggle-btn {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    color: var(--text-secondary);
+    border-radius: 50%;
+    width: 44px;
+    height: 44px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+  }
+  
+  .theme-toggle-btn:hover {
+    background: rgba(255, 255, 255, 0.08);
+    border-color: var(--accent);
+    color: var(--accent);
+  }
+
+  @media (min-width: 1024px) {
+    .app-container {
+      flex-direction: row;
+    }
+    
+    .sidebar {
+      width: 280px;
+      position: fixed;
+      top: 0;
+      bottom: 0;
+      left: 0;
+    }
+    
+    .main-content {
+      margin-left: 280px;
+      padding: 48px;
+    }
+  }
+  
+  @media (max-width: 1023px) {
+    .sidebar {
+      position: fixed;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      height: 76px;
+      border-right: none;
+      border-top: 1px solid var(--border);
+      flex-direction: row;
+      justify-content: space-around;
+      align-items: center;
+      padding: 0 12px;
+      z-index: 1000;
+    }
+    
+    .sidebar-brand, .sidebar-sub, .weather-widget {
+      display: none !important;
+    }
+    
+    .sidebar-nav {
+      flex-direction: row;
+      width: 100%;
+      overflow-x: auto;
+      white-space: nowrap;
+      gap: 12px;
+      padding: 8px 0;
+      scrollbar-width: none;
+      -ms-overflow-style: none;
+    }
+    
+    .sidebar-nav::-webkit-scrollbar {
+      display: none;
+    }
+    
+    .tab-btn {
+      display: inline-flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 4px;
+      flex-shrink: 0;
+      width: auto;
+      padding: 6px 12px;
+      background: transparent;
+      border: none;
+      color: var(--text-secondary);
+      font-size: 0.75rem;
+      font-weight: 600;
+      white-space: nowrap;
+      text-align: center;
+    }
+    
+    .tab-btn.active {
+      background: transparent;
+      color: var(--accent);
+    }
+    
+    .tab-btn span {
+      font-size: 0.7rem;
+    }
+    
+    .main-content {
+      margin-bottom: 96px;
+      padding: 24px 16px;
+    }
+  }
+  
+  .card {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border-radius: 16px;
+    width: 100%;
+    padding: 32px;
+    margin-bottom: 24px;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.15);
+  }
+  
+  .card h2 {
+    font-family: 'Outfit', sans-serif;
+    font-weight: 700;
+    font-size: 1.15rem;
+    letter-spacing: 0.05em;
+    color: var(--text);
+    margin-bottom: 24px;
+    text-transform: uppercase;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  
+  [id$="-btns"] button, [id$="-btns"] div button,
+  #yt-quality-btns button, #yt-profile-btns button, #yt-sync-btns button,
+  #feed-mode-btns button, #feed-quality-btns button, #feed-profile-btns button, #feed-sync-btns button,
+  #twitch-mode-btns button, #twitch-quality-btns button, #twitch-profile-btns button, #twitch-sync-btns button,
+  #pluto-mode-btns button, #pluto-profile-btns button, #pluto-sync-btns button,
+  #iptv-mode-btns button, #iptv-quality-btns button, #iptv-profile-btns button, #iptv-sync-btns button,
+  #ace-mode-btns button, #ace-quality-btns button, #ace-profile-btns button, #ace-sync-btns button,
+  #local-mode-btns button, #local-profile-btns button, #local-sync-btns button {
+    font-family: 'Outfit', sans-serif !important;
+    font-size: 0.72rem !important;
+    font-weight: 700 !important;
+    letter-spacing: 0.04em !important;
+    padding: 8px 14px !important;
+    border-radius: 8px !important;
+    border: 1px solid var(--border) !important;
+    text-transform: uppercase !important;
+    cursor: pointer !important;
+    transition: all 0.2s ease !important;
+  }
+  
+  input[type="text"], select {
+    width: 100%;
+    background: var(--input-bg) !important;
+    color: var(--text) !important;
+    border: 1px solid var(--border) !important;
+    border-radius: 10px !important;
+    padding: 14px 18px !important;
+    font-family: 'Inter', sans-serif !important;
+    font-size: 0.95rem !important;
+    outline: none !important;
+    transition: all 0.2s ease !important;
+  }
+  
+  input[type="text"]:focus, select:focus {
+    border-color: var(--accent) !important;
+    box-shadow: 0 0 0 3px var(--accent-glow) !important;
+    background: var(--panel-solid) !important;
+  }
+  
+  button[id$="-go"], button[id$="-btn"], button[id$="-refresh"], #go-stream, #home-load, #subs-load {
+    background: var(--accent-gradient) !important;
+    color: #fff !important;
+    border: none !important;
+    border-radius: 10px !important;
+    padding: 14px 22px !important;
+    font-family: 'Outfit', sans-serif !important;
+    font-weight: 700 !important;
+    font-size: 0.85rem !important;
+    letter-spacing: 0.04em !important;
+    text-transform: uppercase !important;
+    cursor: pointer !important;
+    box-shadow: 0 4px 14px var(--accent-glow) !important;
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1) !important;
+  }
+  
+  button[id$="-go"]:hover, button[id$="-btn"]:hover, button[id$="-refresh"]:hover, #go-stream:hover, #home-load:hover, #subs-load:hover {
+    transform: translateY(-1px) !important;
+    box-shadow: 0 6px 18px rgba(255, 59, 92, 0.35) !important;
+    filter: brightness(1.1) !important;
+  }
+  
+  .feed-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 24px;
+    margin-top: 8px;
+  }
+  
+  .feed-card {
+    background: rgba(255, 255, 255, 0.015);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    overflow: hidden;
+    cursor: pointer;
+    transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+    position: relative;
+  }
+  
+  .feed-card:hover {
+    transform: translateY(-4px);
+    border-color: var(--accent);
+    box-shadow: 0 10px 25px rgba(0, 0, 0, 0.3), 0 0 15px rgba(255, 59, 92, 0.05);
+  }
+  
+  .feed-thumb {
+    width: 100%;
+    aspect-ratio: 16/9;
+    object-fit: cover;
+    display: block;
+    transition: transform 0.4s ease;
+  }
+  
+  .feed-card:hover .feed-thumb {
+    transform: scale(1.04);
+  }
+  
+  .feed-dur {
+    position: absolute;
+    bottom: 8px;
+    right: 8px;
+    background: rgba(0, 0, 0, 0.8);
+    backdrop-filter: blur(4px);
+    -webkit-backdrop-filter: blur(4px);
+    color: #fff;
+    font-family: monospace;
+    font-size: 0.72rem;
+    font-weight: 700;
+    padding: 3px 6px;
+    border-radius: 4px;
+  }
+  
+  .feed-info {
+    padding: 16px;
+  }
+  
+  .feed-title {
+    font-size: 0.88rem;
+    font-weight: 600;
+    line-height: 1.4;
+    color: var(--text);
+    margin-bottom: 8px;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    min-height: 2.5em;
+  }
+  
+  .feed-card-dismiss {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    width: 26px;
+    height: 26px;
+    border-radius: 50%;
+    background: rgba(0, 0, 0, 0.7);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    color: #fff;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.75rem;
+    opacity: 0;
+    transition: all 0.2s ease;
+    z-index: 10;
+  }
+  
+  .feed-card:hover .feed-card-dismiss {
+    opacity: 1;
+  }
+  
+  .feed-card-dismiss:hover {
+    background: var(--accent) !important;
+    border-color: var(--accent) !important;
+  }
+  
+  .stream-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 14px 18px;
+    background: rgba(255, 255, 255, 0.01);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    margin-bottom: 8px;
+    transition: all 0.2s ease;
+  }
+  
+  .stream-row:hover {
+    background: rgba(255, 59, 92, 0.03);
+    border-color: rgba(255, 59, 92, 0.3);
+    transform: translateX(4px);
+  }
+  
+  .badge {
+    display: inline-block;
+    padding: 4px 12px;
+    border-radius: 20px;
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    font-family: 'Outfit', sans-serif;
+  }
+  .badge.streaming {
+    background: rgba(0, 200, 100, 0.1);
+    color: #00c864;
+    border: 1px solid rgba(0, 200, 100, 0.2);
+  }
+  .badge.starting {
+    background: rgba(255, 152, 0, 0.1);
+    color: #ff9800;
+    border: 1px solid rgba(255, 152, 0, 0.2);
+  }
+  .badge.error {
+    background: rgba(255, 59, 92, 0.1);
+    color: var(--accent);
+    border: 1px solid rgba(255, 59, 92, 0.2);
+  }
+  .badge.done {
+    background: rgba(255, 255, 255, 0.05);
+    color: var(--text-secondary);
+    border: 1px solid var(--border);
+  }
+  
+  details.playback-card {
+    padding: 0;
+    overflow: hidden;
+  }
+  
+  details.playback-card summary {
+    list-style: none;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 20px 28px;
+    cursor: pointer;
+    font-family: 'Outfit', sans-serif;
+    font-weight: 700;
+    font-size: 0.88rem;
+    letter-spacing: 0.06em;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+  }
+  
+  details.playback-card summary::-webkit-details-marker { display: none; }
+  
+  details.playback-card summary::after {
+    content: "＋";
+    font-size: 1.1rem;
+    color: var(--accent);
+    font-weight: 900;
+  }
+  
+  details.playback-card[open] summary::after {
+    content: "－";
+  }
+  
+  .playback-inner {
+    padding: 0 28px 24px;
+  }
+  
+  .empty {
+    color: var(--text-muted);
+    font-size: 0.9rem;
+    font-style: italic;
+    padding: 16px 0;
+  }
+  
+  .usage {
+    font-family: monospace;
+    font-size: 0.85rem;
+    background: var(--input-bg);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 20px;
+    line-height: 1.8;
+    color: var(--text-secondary);
+    word-break: break-all;
+  }
+  
+  .usage span { color: var(--accent); }
+  
+  a { color: var(--accent); text-decoration: none; transition: color 0.15s; }
+  a:hover { color: #ff6b85; }
+  
+  footer {
+    margin-top: 48px;
+    color: var(--text-muted);
+    font-size: 0.78rem;
+    text-align: center;
+    line-height: 1.6;
+    border-top: 1px solid var(--border);
+    padding-top: 24px;
   }
 </style>
 </head>
 <body>
-<!-- Safety Warning Modal -->
-<div id="safety-modal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.85); backdrop-filter:blur(8px); -webkit-backdrop-filter:blur(8px); z-index:99999; justify-content:center; align-items:center; padding:20px;">
-  <div style="background:var(--panel); border:2px solid var(--red); border-radius:16px; max-width:650px; width:100%; max-height:90vh; display:flex; flex-direction:column; box-shadow:0 0 40px rgba(227,25,55,0.25); overflow:hidden;">
-    <!-- Modal Header -->
-    <div style="background:rgba(227,25,55,0.1); padding:24px; border-bottom:1px solid var(--border); text-align:center;">
-      <div style="font-size:2.2rem; margin-bottom:6px; display:inline-block; animation: warning-pulse 2s infinite ease-in-out;">⚠</div>
-      <h2 style="font-family:'Orbitron',monospace; font-size:1.6rem; color:var(--red); letter-spacing:0.1em; text-transform:uppercase; margin:0;">Safety Warning</h2>
-      <div style="font-family:'Orbitron',monospace; font-size:0.9rem; color:var(--text); letter-spacing:0.15em; margin-top:5px; font-weight:700;">USE ONLY WHEN PARKED</div>
+<div id="safety-modal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(9,8,12,0.92); backdrop-filter:blur(16px); -webkit-backdrop-filter:blur(16px); z-index:99999; justify-content:center; align-items:center; padding:20px;">
+  <div style="background:var(--panel-solid); border:1px solid rgba(255,59,92,0.3); border-radius:20px; max-width:650px; width:100%; max-height:90vh; display:flex; flex-direction:column; box-shadow:0 0 50px rgba(255,59,92,0.15); overflow:hidden;">
+    <div style="background:rgba(255,59,92,0.05); padding:28px; border-bottom:1px solid var(--border); text-align:center;">
+      <div style="font-size:2.5rem; margin-bottom:8px; display:inline-block; animation: pulse 2s infinite ease-in-out;">⚠️</div>
+      <h2 style="font-family:'Outfit',sans-serif; font-weight:800; font-size:1.6rem; color:var(--accent); letter-spacing:0.02em; text-transform:uppercase; margin:0;">Safety Disclaimer</h2>
+      <div style="font-family:'Outfit',sans-serif; font-size:0.75rem; color:var(--text); letter-spacing:0.1em; margin-top:6px; font-weight:700; text-transform:uppercase;">Stationary Car Use Only</div>
     </div>
     
-    <!-- Modal Body -->
-    <div style="padding:24px; overflow-y:auto; font-size:0.95rem; line-height:1.6; color:var(--text); flex:1; display:flex; flex-direction:column; gap:16px;">
-      <p style="font-weight:bold; text-align:center; color:#fff; font-size:1.1rem; margin-bottom:8px;">Do not use this application while driving or operating a vehicle of any kind.</p>
+    <div style="padding:28px; overflow-y:auto; font-size:0.9rem; line-height:1.6; color:var(--text-secondary); flex:1; display:flex; flex-direction:column; gap:16px;">
+      <p style="font-weight:700; text-align:center; color:#fff; font-size:1.05rem; margin-bottom:8px;">Do not operate this application while driving or operating a vehicle.</p>
+      <div style="display:flex; gap:12px; align-items:flex-start;"><span style="color:var(--accent); font-weight:bold;">•</span><p style="margin:0;">Watching video while driving is illegal and poses a severe risk of death or injury.</p></div>
+      <div style="display:flex; gap:12px; align-items:flex-start;"><span style="color:var(--accent); font-weight:bold;">•</span><p style="margin:0;">You are solely responsible for complying with all local traffic laws and distracted-driving regulations.</p></div>
+      <div style="display:flex; gap:12px; align-items:flex-start;"><span style="color:var(--accent); font-weight:bold;">•</span><p style="margin:0;">This service is provided strictly "as-is" with no warranty or guarantee of vehicle compatibility or safety.</p></div>
+      <div style="display:flex; gap:12px; align-items:flex-start;"><span style="color:var(--accent); font-weight:bold;">•</span><p style="margin:0;">This application is fully unofficial and is not affiliated with or endorsed by Tesla, Inc.</p></div>
+    </div>
+    
+    <div style="padding:28px; border-top:1px solid var(--border); background:rgba(0,0,0,0.1); display:flex; flex-direction:column; gap:14px; align-items:center; text-align:center;">
+      <button id="accept-safety" style="background:var(--accent-gradient); color:#fff; border:none; padding:16px 36px; font-family:'Outfit',sans-serif; font-size:0.95rem; font-weight:700; letter-spacing:0.04em; border-radius:10px; cursor:pointer; width:100%; max-width:320px; box-shadow:0 4px 15px rgba(255,59,92,0.3); transition:all 0.2s;">
+        Accept & Access
+      </button>
+      <p style="font-size:0.8rem; color:var(--text-muted); margin:0;">
+        By tapping accept, you confirm you are currently parked and agree to the terms above.
+      </p>
+    </div>
+  </div>
+</div>
+
+<div class="app-container">
+  <aside class="sidebar">
+    <div class="sidebar-brand">OpenCarStream<span class="dot"></span></div>
+    <div class="sidebar-sub">VEHICULAR PORTAL</div>
+    <nav class="sidebar-nav">
+      <button class="tab-btn" data-tab="stream">
+        <svg class="nav-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 17a8 8 0 0 1 14 0M12 2v8M12 2a10 10 0 0 0-10 10M22 12a10 10 0 0 0-10-10M12 12a1 1 0 1 0 0-2 1 1 0 0 0 0 2z"/></svg>
+        <span>Stream Launcher</span>
+      </button>
+      <button class="tab-btn active" data-tab="feed">
+        <svg class="nav-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M22.54 6.42a2.78 2.78 0 0 0-1.94-2C18.88 4 12 4 12 4s-6.88 0-8.6.46a2.78 2.78 0 0 0-1.94 2A29 29 0 0 0 1 11.75a29 29 0 0 0 .46 5.33A2.78 2.78 0 0 0 3.4 19c1.72.46 8.6.46 8.6.46s6.88 0 8.6-.46a2.78 2.78 0 0 0 1.94-2 29 29 0 0 0 .46-5.25 29 29 0 0 0-.46-5.33z"/><polygon points="9.75 15.02 15.5 11.75 9.75 8.48 9.75 15.02"/></svg>
+        <span>YouTube Feed</span>
+      </button>
+      <button class="tab-btn" data-tab="twitch">
+        <svg class="nav-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 2H3v16h5v4l4-4h5l4-4V2zm-10 9H9V6h2v5zm4 0h-2V6h2v5z"/></svg>
+        <span>Twitch Streams</span>
+      </button>
+      <button class="tab-btn" data-tab="pluto">
+        <svg class="nav-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20M2 12h20"/></svg>
+        <span>Pluto TV</span>
+      </button>
+      <button class="tab-btn" data-tab="iptv">
+        <svg class="nav-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="7" width="20" height="15" rx="2" ry="2"/><polyline points="17 2 12 7 7 2"/></svg>
+        <span>IPTV Lists</span>
+      </button>
+      <button class="tab-btn" data-tab="ace">
+        <svg class="nav-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+        <span>Acestream proxy</span>
+      </button>
+      <button class="tab-btn" data-tab="local">
+        <svg class="nav-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+        <span>Local files</span>
+      </button>
+      <button class="tab-btn" data-tab="info">
+        <svg class="nav-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+        <span>System Info</span>
+      </button>
+    </nav>
+    <div id="weather-text" class="weather-widget"></div>
+  </aside>
+
+  <main class="main-content">
+    <div class="main-header" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:24px;width:100%;">
+      <h1 id="main-header-title" style="font-family:'Outfit',sans-serif;font-weight:800;font-size:1.5rem;color:var(--text);text-transform:uppercase;letter-spacing:-0.01em;">YouTube Feed</h1>
+      <button id="theme-toggle" class="theme-toggle-btn" title="Toggle Theme">
+        <svg class="nav-icon sun-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="display:none;margin:0;"><circle cx="12" cy="12" r="5"></circle><line x1="12" y1="1" x2="12" y2="3"></line><line x1="12" y1="21" x2="12" y2="23"></line><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line><line x1="1" y1="12" x2="3" y2="12"></line><line x1="21" y1="12" x2="23" y2="12"></line><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line></svg>
+        <svg class="nav-icon moon-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="margin:0;"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path></svg>
+      </button>
+    </div>
+    
+    <div class="tab-panel" id="tab-stream">
+      <div class="card">
+        <h2>
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="stroke:var(--accent);"><polygon points="23 7 16 12 23 17 23 7"></polygon><rect x="1" y="5" width="15" height="14" rx="2" ry="2"></rect></svg>
+          Instant Stream Launcher
+        </h2>
+        <p style="font-size:0.85rem;color:var(--text-secondary);margin-bottom:20px;">
+          Paste any YouTube, Twitch, or X/Twitter video URL — or a YouTube video ID.
+        </p>
+        <div style="display:flex;flex-direction:column;gap:18px;">
+          <input id="yt-id" type="text" placeholder="Paste URL or YouTube ID...">
+          <div style="display:flex; flex-direction:column; gap:12px;">
+            <div style="display:flex; align-items:center; gap:8px;"><span style="font-size:0.7rem; font-weight:750; color:var(--text-muted); text-transform:uppercase;">Format:</span><div id="yt-mode-btns" style="display:flex;gap:6px;flex-wrap:wrap;"></div></div>
+            <div style="display:flex; align-items:center; gap:8px;"><span style="font-size:0.7rem; font-weight:750; color:var(--text-muted); text-transform:uppercase;">Quality:</span><div id="yt-quality-btns" style="display:flex;gap:6px;flex-wrap:wrap;"></div></div>
+            <div style="display:flex; align-items:center; gap:8px;"><span style="font-size:0.7rem; font-weight:750; color:var(--text-muted); text-transform:uppercase;">Profile:</span><div id="yt-profile-btns" style="display:flex;gap:6px;flex-wrap:wrap;"></div></div>
+            <div style="display:flex; align-items:center; gap:8px;"><span style="font-size:0.7rem; font-weight:750; color:var(--text-muted); text-transform:uppercase;">Audio Delay:</span><div id="yt-sync-btns" style="display:flex;gap:6px;flex-wrap:wrap;"></div></div>
+          </div>
+        </div>
+        <div style="margin-top:24px;">
+          <button id="go-stream">Open Stream</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="stroke:var(--accent);"><rect x="2" y="2" width="20" height="20" rx="2.18" ry="2.18"></rect><line x1="7" y1="2" x2="7" y2="22"></line><line x1="17" y1="2" x2="17" y2="22"></line><line x1="2" y1="12" x2="22" y2="12"></line><line x1="2" y1="7" x2="7" y2="7"></line><line x1="2" y1="17" x2="7" y2="17"></line><line x1="17" y1="17" x2="22" y2="17"></line><line x1="17" y1="7" x2="22" y2="7"></line></svg>
+          Active streams ({{stream_count}})
+        </h2>
+        {{streams_html}}
+      </div>
+
+      <div class="card">
+        <h2>
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="stroke:var(--accent);"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+          Transcoder Configuration
+        </h2>
+        <div class="env-row" style="display:grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap:16px;">
+          <div class="env-item" style="font-size:0.85rem; color:var(--text-secondary);">FPS: <b style="color:var(--text);">{{fps}}</b></div>
+          <div class="env-item" style="font-size:0.85rem; color:var(--text-secondary);">Quality: <b style="color:var(--text);">{{quality}}</b></div>
+          <div class="env-item" style="font-size:0.85rem; color:var(--text-secondary);">Resolution: <b style="color:var(--text);">{{width}}×{{height}}</b></div>
+          <div class="env-item" style="font-size:0.85rem; color:var(--text-secondary);">MP4 output: <b style="color:var(--text);">{{mp4_width}}×{{mp4_height}} @ {{mp4_bitrate}}</b></div>
+          <div class="env-item" style="font-size:0.85rem; color:var(--text-secondary);">OGV output: <b style="color:var(--text);">{{ogv_width}}×{{ogv_height}} @ {{ogv_fps}} fps</b></div>
+          <div class="env-item" style="font-size:0.85rem; color:var(--text-secondary);">H.264 encoder: <b style="color:var(--text);">{{h264_encoder}}</b></div>
+          <div class="env-item" style="font-size:0.85rem; color:var(--text-secondary);">HW accel: <b style="color:var(--text);">{{hwaccel}}</b></div>
+          <div class="env-item" style="font-size:0.85rem; color:var(--text-secondary);">Max streams: <b style="color:var(--text);">{{max_streams}}</b></div>
+          <div class="env-item" style="font-size:0.85rem; color:var(--text-secondary);">Audio start delay: <b style="color:var(--text);">{{audio_delay_ms}} ms</b></div>
+          <div class="env-item" style="font-size:0.85rem; color:var(--text-secondary);">Subscriptions: <b style="color:var(--text);">{{subs_status}}</b></div>
+          <div class="env-item" style="font-size:0.85rem; color:var(--text-secondary);">Pluto TV langs: <b style="color:var(--text);">{{pluto_langs}}</b></div>
+          <div class="env-item" style="font-size:0.85rem; color:var(--text-secondary);">IPTV lists: <b style="color:var(--text);">{{iptv_status}}</b></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="tab-panel active" id="tab-feed">
+      <details class="card playback-card">
+        <summary>Playback options</summary>
+        <div class="playback-inner" style="display:flex;flex-direction:column;gap:12px; padding-top:14px;">
+          <div style="display:flex; align-items:center; gap:8px;"><span style="font-size:0.7rem; font-weight:750; color:var(--text-muted); text-transform:uppercase;">Format:</span><div id="feed-mode-btns" style="display:flex;gap:6px;flex-wrap:wrap;"></div></div>
+          <div style="display:flex; align-items:center; gap:8px;"><span style="font-size:0.7rem; font-weight:750; color:var(--text-muted); text-transform:uppercase;">Quality:</span><div id="feed-quality-btns" style="display:flex;gap:6px;flex-wrap:wrap;"></div></div>
+          <div style="display:flex; align-items:center; gap:8px;"><span style="font-size:0.7rem; font-weight:750; color:var(--text-muted); text-transform:uppercase;">Profile:</span><div id="feed-profile-btns" style="display:flex;gap:6px;flex-wrap:wrap;"></div></div>
+          <div style="display:flex; align-items:center; gap:8px;"><span style="font-size:0.7rem; font-weight:750; color:var(--text-muted); text-transform:uppercase;">Audio Delay:</span><div id="feed-sync-btns" style="display:flex;gap:6px;flex-wrap:wrap;"></div></div>
+        </div>
+      </details>
+
+      <div class="card" id="home-card" style="display:none;">
+        <h2>
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="stroke:var(--accent);"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path><polyline points="9 22 9 12 15 12 15 22"></polyline></svg>
+          Subscriptions feed
+        </h2>
+        <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:center;margin-bottom:20px;">
+          <button id="home-load">Show Home Feed</button>
+          <button id="home-refresh" style="display:none;background:transparent !important;color:var(--text-secondary) !important;border:1px solid var(--border) !important;box-shadow:none !important;">↺ Refresh</button>
+        </div>
+        <div class="feed-status" id="home-status"></div>
+        <div class="feed-grid" id="home-grid"></div>
+        <div style="text-align:center;margin-top:24px;display:none;" id="home-more-wrap">
+          <button id="home-more" style="background:transparent !important;color:var(--text-secondary) !important;border:1px solid var(--border) !important;box-shadow:none !important;">Load More</button>
+        </div>
+      </div>
+
+      <div class="card" id="subs-card" style="display:none;">
+        <h2>
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="stroke:var(--accent);"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>
+          My Subscribed Channels
+        </h2>
+        <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:center;margin-bottom:20px;">
+          <button id="subs-load">Show Channels</button>
+          <input id="subs-filter" type="text" placeholder="Filter channels..." style="flex:1;min-width:200px;display:none;">
+        </div>
+        <div class="feed-status" id="subs-status"></div>
+        <div id="subs-list" style="display:flex;flex-direction:column;gap:8px;max-height:480px;overflow-y:auto;border:1px solid var(--border);border-radius:12px;padding:8px;"></div>
+      </div>
+
+      <div class="card">
+        <h2>
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="stroke:var(--accent);"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+          Search YouTube
+        </h2>
+        <div style="display:flex; gap:12px; margin-bottom:20px; align-items:center;">
+          <input id="yt-search-input" type="text" placeholder="Search for videos...">
+          <button id="yt-search-go" style="white-space:nowrap;">Search</button>
+        </div>
+        <div class="feed-status" id="yt-search-status"></div>
+        <div class="feed-grid" id="yt-search-grid"></div>
+        <div style="text-align:center;margin-top:24px;display:none;" id="yt-search-more-wrap">
+          <button id="yt-search-more" style="background:transparent !important;color:var(--text-secondary) !important;border:1px solid var(--border) !important;box-shadow:none !important;">Load More</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2 id="feed-card-title">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="stroke:var(--accent);"><path d="M12 2.69l5.66 5.66a8 8 0 1 1-11.31 0z"/></svg>
+          Channel Uploads Lookup
+        </h2>
+        <div style="display:flex; gap:12px; margin-bottom:20px; align-items:center;">
+          <input id="feed-channel" type="text" placeholder="@channelhandle or channel URL...">
+          <button id="feed-go" style="white-space:nowrap;">Load feed</button>
+        </div>
+        <div class="feed-status" id="feed-status"></div>
+        <div class="feed-grid" id="feed-grid"></div>
+        <div style="text-align:center;margin-top:24px;display:none;" id="feed-more-wrap">
+          <button id="feed-more" style="background:transparent !important;color:var(--text-secondary) !important;border:1px solid var(--border) !important;box-shadow:none !important;">Load More</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="tab-panel" id="tab-twitch">
+      <details class="card playback-card">
+        <summary>Playback options</summary>
+        <div class="playback-inner" style="display:flex;flex-direction:column;gap:12px; padding-top:14px;">
+          <div style="display:flex; align-items:center; gap:8px;"><span style="font-size:0.7rem; font-weight:750; color:var(--text-muted); text-transform:uppercase;">Format:</span><div id="twitch-mode-btns" style="display:flex;gap:6px;flex-wrap:wrap;"></div></div>
+          <div style="display:flex; align-items:center; gap:8px;"><span style="font-size:0.7rem; font-weight:750; color:var(--text-muted); text-transform:uppercase;">Quality:</span><div id="twitch-quality-btns" style="display:flex;gap:6px;flex-wrap:wrap;"></div></div>
+          <div style="display:flex; align-items:center; gap:8px;"><span style="font-size:0.7rem; font-weight:750; color:var(--text-muted); text-transform:uppercase;">Profile:</span><div id="twitch-profile-btns" style="display:flex;gap:6px;flex-wrap:wrap;"></div></div>
+          <div style="display:flex; align-items:center; gap:8px;"><span style="font-size:0.7rem; font-weight:750; color:var(--text-muted); text-transform:uppercase;">Audio Delay:</span><div id="twitch-sync-btns" style="display:flex;gap:6px;flex-wrap:wrap;"></div></div>
+        </div>
+      </details>
       
-      <div style="display:flex; gap:12px; align-items:flex-start;">
-        <span style="color:var(--red); font-size:1.2rem; line-height:1;">•</span>
-        <p style="margin:0;">Watching video while driving is illegal in most countries and jurisdictions and poses a serious risk of death or injury to yourself and others.</p>
+      <div class="card">
+        <h2>
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="stroke:var(--accent);"><polygon points="23 7 16 12 23 17 23 7"></polygon><rect x="1" y="5" width="15" height="14" rx="2" ry="2"></rect></svg>
+          Twitch Live Channel
+        </h2>
+        <div style="display:flex;flex-direction:column;gap:14px;">
+          <input id="twitch-live-channel" type="text" placeholder="Enter channel name (e.g. Ninja)...">
+          <div><button id="twitch-live-go">Watch Live</button></div>
+        </div>
       </div>
-
-      <div style="display:flex; gap:12px; align-items:flex-start;">
-        <span style="color:var(--red); font-size:1.2rem; line-height:1;">•</span>
-        <p style="margin:0;">You are solely responsible for complying with all applicable traffic laws, distracted-driving regulations, and any other laws in your jurisdiction.</p>
-      </div>
-
-      <div style="display:flex; gap:12px; align-items:flex-start;">
-        <span style="color:var(--red); font-size:1.2rem; line-height:1;">•</span>
-        <p style="margin:0;">This service is provided strictly "as-is" with no warranty of any kind — express or implied — including no guarantee of safety, fitness for purpose, or suitability for use in a vehicle.</p>
-      </div>
-
-      <div style="display:flex; gap:12px; align-items:flex-start;">
-        <span style="color:var(--red); font-size:1.2rem; line-height:1;">•</span>
-        <p style="margin:0;">This application and its creator are not affiliated with, endorsed by, or in any way connected to Tesla, Inc.</p>
-      </div>
-
-      <div style="display:flex; gap:12px; align-items:flex-start;">
-        <span style="color:var(--red); font-size:1.2rem; line-height:1;">•</span>
-        <p style="margin:0;">The creator of this application accepts no responsibility or liability of any kind for accidents, injuries, deaths, property damage, fines, penalties, legal proceedings, or any other consequences arising from your use of this application.</p>
-      </div>
-
-      <div style="display:flex; gap:12px; align-items:flex-start;">
-        <span style="color:var(--red); font-size:1.2rem; line-height:1;">•</span>
-        <p style="margin:0;">By continuing, you agree to indemnify and hold harmless the creator of this application from any and all claims, damages, losses, or liabilities resulting from your use of this application.</p>
+      
+      <div class="card">
+        <h2>
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="stroke:var(--accent);"><rect x="2" y="2" width="20" height="20" rx="2.18" ry="2.18"></rect><line x1="7" y1="2" x2="7" y2="22"></line><line x1="17" y1="2" x2="17" y2="22"></line><line x1="2" y1="12" x2="22" y2="12"></line></svg>
+          Twitch VOD Archive
+        </h2>
+        <div style="display:flex;flex-direction:column;gap:14px;margin-bottom:20px;">
+          <input id="twitch-vod-channel" type="text" placeholder="Enter channel name for VODs...">
+          <div><button id="twitch-vod-go">Load VODs</button></div>
+        </div>
+        <div class="feed-status" id="twitch-vod-status"></div>
+        <div class="feed-grid" id="twitch-vod-grid"></div>
+        <div style="text-align:center;margin-top:24px;display:none;" id="twitch-vod-more-wrap">
+          <button id="twitch-vod-more" style="background:transparent !important;color:var(--text-secondary) !important;border:1px solid var(--border) !important;box-shadow:none !important;">Load More</button>
+        </div>
       </div>
     </div>
-    
-    <!-- Modal Footer -->
-    <div style="padding:24px; border-top:1px solid var(--border); background:rgba(0,0,0,0.25); display:flex; flex-direction:column; gap:14px; align-items:center; text-align:center;">
-      <button id="accept-safety" style="background:var(--red); color:#fff; border:none; padding:14px 32px; font-family:'Orbitron',monospace; font-size:1rem; font-weight:900; letter-spacing:0.1em; border-radius:8px; cursor:pointer; transition:transform 0.15s, background-color 0.15s; width:100%; max-width:320px; box-shadow:0 4px 15px rgba(227,25,55,0.4);">
-        I Understand & Accept
-      </button>
-      <p style="font-size:0.85rem; color:var(--muted); margin:0; max-width:550px; line-height:1.4;">
-        By tapping "I Understand & Accept" you confirm that your vehicle is fully parked and stationary and that you agree to all terms stated above.
-      </p>
-    </div>
-  </div>
-</div>
 
-<h1>OPENCARSTREAM</h1>
-<p class="sub">A third-party streaming launcher for Tesla’s in-car browser</p>
-
-<div class="tabs">
-  <button class="tab-btn" data-tab="stream">Stream</button>
-  <button class="tab-btn active" data-tab="feed">YouTube</button>
-  <button class="tab-btn" data-tab="twitch">Twitch</button>
-  <button class="tab-btn" data-tab="pluto">Pluto TV</button>
-  <button class="tab-btn" data-tab="iptv">IPTV</button>
-  <button class="tab-btn" data-tab="ace">Acestream</button>
-  <button class="tab-btn" data-tab="local">Local Media</button>
-  <button class="tab-btn" data-tab="info">Info</button>
-</div>
-
-<!-- ── Stream tab ── -->
-<div class="tab-panel" id="tab-stream">
-  <div class="card">
-    <h2>Start stream</h2>
-    <p style="font-size:.85rem;color:var(--muted);margin-bottom:12px;">
-      Paste any YouTube, Twitch, or X/Twitter video URL — or a YouTube video ID.
-    </p>
-    <div style="display:flex;flex-direction:column;gap:10px;">
-      <input id="yt-id" type="text" placeholder="URL or YouTube video ID">
-      <div id="yt-mode-btns" style="display:flex;gap:6px;flex-wrap:wrap;"></div>
-      <div id="yt-quality-btns" style="display:flex;gap:6px;flex-wrap:wrap;"></div>
-      <div id="yt-profile-btns" style="display:flex;gap:6px;flex-wrap:wrap;"></div>
-      <div id="yt-sync-btns" style="display:flex;gap:6px;flex-wrap:wrap;"></div>
-    </div>
-    <div style="margin-top:10px;">
-      <button id="go-stream"
-              style="background:var(--red);color:white;border:0;border-radius:6px;padding:10px 16px;font-family:'Orbitron',monospace;letter-spacing:.08em;cursor:pointer;">
-        OPEN STREAM
-      </button>
-    </div>
-  </div>
-
-  <div class="card">
-    <h2>Active streams ({{stream_count}})</h2>
-    {{streams_html}}
-  </div>
-
-  <div class="card">
-    <h2>Configuration</h2>
-    <div class="env-row">
-      <div class="env-item">FPS <b>{{fps}}</b></div>
-      <div class="env-item">Quality <b>{{quality}}</b></div>
-      <div class="env-item">Resolution <b>{{width}}×{{height}}</b></div>
-      <div class="env-item">MP4 <b>{{mp4_width}}×{{mp4_height}} @ {{mp4_bitrate}}</b></div>
-      <div class="env-item">OGV <b>{{ogv_width}}×{{ogv_height}} @ {{ogv_fps}} fps</b></div>
-      <div class="env-item">H.264 encoder <b>{{h264_encoder}}</b></div>
-      <div class="env-item">HW accel <b>{{hwaccel}}</b></div>
-      <div class="env-item">Max streams <b>{{max_streams}}</b></div>
-    <div class="env-item">Audio start delay <b>{{audio_delay_ms}} ms</b></div>
-    <div class="env-item">Subscriptions <b>{{subs_status}}</b></div>
-    <div class="env-item">Pluto TV langs <b>{{pluto_langs}}</b></div>
-    <div class="env-item">IPTV lists <b>{{iptv_status}}</b></div>
-  </div>
-</div>
-</div>
-
-<!-- ── Feed tab ── -->
-<div class="tab-panel active" id="tab-feed">
-  <details class="card playback-card">
-    <summary>Playback options</summary>
-    <div class="playback-inner" style="display:flex;flex-direction:column;gap:10px;">
-      <div id="feed-mode-btns" style="display:flex;gap:6px;flex-wrap:wrap;"></div>
-      <div id="feed-quality-btns" style="display:flex;gap:6px;flex-wrap:wrap;"></div>
-      <div id="feed-profile-btns" style="display:flex;gap:6px;flex-wrap:wrap;"></div>
-      <div id="feed-sync-btns" style="display:flex;gap:6px;flex-wrap:wrap;"></div>
-    </div>
-  </details>
-
-  <!-- Home feed panel -->
-  <div class="card" id="home-card" style="display:none;">
-    <h2>Home feed</h2>
-    <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:14px;">
-      <button id="home-load" style="background:var(--red);color:white;border:0;border-radius:8px;padding:11px 20px;font-family:'Orbitron',monospace;font-size:.8rem;letter-spacing:.08em;cursor:pointer;">SHOW HOME FEED</button>
-      <button id="home-refresh" style="display:none;background:transparent;color:var(--muted);border:1px solid var(--border);border-radius:8px;padding:11px 18px;font-family:'Orbitron',monospace;font-size:.75rem;letter-spacing:.08em;cursor:pointer;">↺ REFRESH</button>
-    </div>
-    <div class="feed-status" id="home-status"></div>
-    <div class="feed-grid" id="home-grid"></div>
-    <div style="text-align:center;margin-top:14px;display:none;" id="home-more-wrap">
-      <button id="home-more" style="background:transparent;color:var(--muted);border:1px solid var(--border);border-radius:6px;padding:8px 20px;font-family:'Orbitron',monospace;font-size:.7rem;letter-spacing:.08em;cursor:pointer;">LOAD MORE</button>
-    </div>
-  </div>
-
-  <!-- Subscriptions panel (shown when subscriptions file is mounted) -->
-  <div class="card" id="subs-card" style="display:none;">
-    <h2>My subscriptions</h2>
-    <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:14px;">
-      <button id="subs-load" style="background:var(--red);color:white;border:0;border-radius:8px;padding:11px 20px;font-family:'Orbitron',monospace;font-size:.8rem;letter-spacing:.08em;cursor:pointer;">SHOW SUBSCRIPTIONS</button>
-      <input id="subs-filter" type="text" placeholder="Filter channels…"
-             style="flex:1;min-width:180px;background:var(--input-bg);color:var(--text);border:1px solid var(--border);border-radius:8px;padding:10px 14px;font-family:monospace;font-size:.95rem;display:none;">
-    </div>
-    <div class="feed-status" id="subs-status"></div>
-    <div id="subs-list" style="display:flex;flex-direction:column;gap:0;max-height:480px;overflow-y:auto;border:1px solid var(--border);border-radius:8px;padding:0 4px;"></div>
-  </div>
-
-  <!-- YouTube search -->
-  <div class="card">
-    <h2>Search YouTube</h2>
-    <div class="feed-controls">
-      <input id="yt-search-input" type="text" placeholder="Search query…">
-      <button id="yt-search-go">SEARCH</button>
-    </div>
-    <div class="feed-status" id="yt-search-status"></div>
-    <div class="feed-grid" id="yt-search-grid"></div>
-    <div style="text-align:center;margin-top:14px;display:none;" id="yt-search-more-wrap">
-      <button id="yt-search-more" style="background:transparent;color:var(--muted);border:1px solid var(--border);border-radius:6px;padding:8px 20px;font-family:'Orbitron',monospace;font-size:.7rem;letter-spacing:.08em;cursor:pointer;">LOAD MORE</button>
-    </div>
-  </div>
-
-  <!-- Manual channel lookup -->
-  <div class="card">
-    <h2 id="feed-card-title">Channel recent uploads</h2>
-    <div class="feed-controls">
-      <input id="feed-channel" type="text" placeholder="@channelhandle or channel URL">
-      <button id="feed-go">LOAD FEED</button>
-    </div>
-    <div class="feed-status" id="feed-status"></div>
-    <div class="feed-grid" id="feed-grid"></div>
-    <div style="text-align:center;margin-top:14px;display:none;" id="feed-more-wrap">
-      <button id="feed-more" style="background:transparent;color:var(--muted);border:1px solid var(--border);border-radius:6px;padding:8px 20px;font-family:'Orbitron',monospace;font-size:.7rem;letter-spacing:.08em;cursor:pointer;">LOAD MORE</button>
-    </div>
-  </div>
-</div>
-
-<!-- ── Twitch tab ── -->
-<div class="tab-panel" id="tab-twitch">
-  <details class="card playback-card">
-    <summary>Playback options</summary>
-    <div class="playback-inner" style="display:flex;flex-direction:column;gap:10px;">
-      <div id="twitch-mode-btns" style="display:flex;gap:6px;flex-wrap:wrap;"></div>
-      <div id="twitch-quality-btns" style="display:flex;gap:6px;flex-wrap:wrap;"></div>
-      <div id="twitch-profile-btns" style="display:flex;gap:6px;flex-wrap:wrap;"></div>
-      <div id="twitch-sync-btns" style="display:flex;gap:6px;flex-wrap:wrap;"></div>
-    </div>
-  </details>
-  <div class="card">
-    <h2>Live stream</h2>
-    <div style="display:flex;flex-direction:column;gap:10px;">
-      <input id="twitch-live-channel" type="text" placeholder="channel name (e.g. xqc)" style="background:var(--input-bg);color:var(--text);border:1px solid var(--border);border-radius:8px;padding:12px 16px;font-family:monospace;font-size:1rem;">
-      <div><button id="twitch-live-go" style="background:var(--red);color:white;border:0;border-radius:8px;padding:12px 20px;font-family:'Orbitron',monospace;letter-spacing:.08em;cursor:pointer;font-size:.8rem;">WATCH LIVE</button></div>
-    </div>
-  </div>
-  <div class="card">
-    <h2>VODs</h2>
-    <div style="display:flex;flex-direction:column;gap:10px;margin-bottom:14px;">
-      <input id="twitch-vod-channel" type="text" placeholder="channel name" style="background:var(--input-bg);color:var(--text);border:1px solid var(--border);border-radius:8px;padding:12px 16px;font-family:monospace;font-size:1rem;">
-      <div><button id="twitch-vod-go" style="background:var(--red);color:white;border:0;border-radius:8px;padding:12px 20px;font-family:'Orbitron',monospace;letter-spacing:.08em;cursor:pointer;font-size:.8rem;">LOAD VODS</button></div>
-    </div>
-    <div class="feed-status" id="twitch-vod-status"></div>
-    <div class="feed-grid" id="twitch-vod-grid"></div>
-    <div style="text-align:center;margin-top:14px;display:none;" id="twitch-vod-more-wrap">
-      <button id="twitch-vod-more" style="background:transparent;color:var(--muted);border:1px solid var(--border);border-radius:6px;padding:8px 20px;font-family:'Orbitron',monospace;font-size:.7rem;letter-spacing:.08em;cursor:pointer;">LOAD MORE</button>
-    </div>
-  </div>
-</div>
-
-<!-- ── Pluto TV tab ── -->
-<div class="tab-panel" id="tab-pluto">
-  <details class="card playback-card">
-    <summary>Playback options</summary>
-    <div class="playback-inner" style="display:flex;flex-direction:column;gap:10px;">
-      <div id="pluto-mode-btns" style="display:flex;gap:6px;flex-wrap:wrap;"></div>
-      <div id="pluto-profile-btns" style="display:flex;gap:6px;flex-wrap:wrap;"></div>
-      <div id="pluto-sync-btns" style="display:flex;gap:6px;flex-wrap:wrap;"></div>
-    </div>
-  </details>
-  <div class="card">
-    <h2>Channels</h2>
-    <div id="pluto-lang-btns" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px;"></div>
-    <div class="feed-status" id="pluto-status">Open this tab to load channels.</div>
-    <input id="pluto-filter" type="text" placeholder="Filter channels…"
-             style="background:var(--input-bg);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:8px 12px;font-family:monospace;">
-    <div id="pluto-list" style="max-height:520px;overflow-y:auto;border:1px solid var(--border);border-radius:8px;padding:0 10px 10px;"></div>
-  </div>
-</div>
-
-<!-- ── IPTV tab ── -->
-<div class="tab-panel" id="tab-iptv">
-  <details class="card playback-card">
-    <summary>Playback options</summary>
-    <div class="playback-inner" style="display:flex;flex-direction:column;gap:10px;">
-      <div id="iptv-mode-btns" style="display:flex;gap:6px;flex-wrap:wrap;"></div>
-      <div id="iptv-quality-btns" style="display:flex;gap:6px;flex-wrap:wrap;"></div>
-      <div id="iptv-profile-btns" style="display:flex;gap:6px;flex-wrap:wrap;"></div>
-      <div id="iptv-sync-btns" style="display:flex;gap:6px;flex-wrap:wrap;"></div>
-    </div>
-  </details>
-  <div class="card">
-    <h2>IPTV lists</h2>
-    <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:14px;">
-      <button id="iptv-prev"
-              style="background:transparent;color:var(--muted);border:1px solid var(--border);border-radius:6px;padding:8px 14px;font-family:'Orbitron',monospace;font-size:.9rem;cursor:pointer;">
-        ◄
-      </button>
-      <div id="iptv-list-name"
-           style="flex:1;min-width:180px;color:var(--text);font-size:.85rem;text-align:center;padding:8px;border:1px solid var(--border);border-radius:6px;background:var(--input-bg);">
-        Select a list
-      </div>
-      <button id="iptv-next"
-              style="background:transparent;color:var(--muted);border:1px solid var(--border);border-radius:6px;padding:8px 14px;font-family:'Orbitron',monospace;font-size:.9rem;cursor:pointer;">
-        ►
-      </button>
-      <button id="iptv-refresh"
-              style="background:var(--red);color:white;border:0;border-radius:6px;padding:8px 14px;font-family:'Orbitron',monospace;font-size:.7rem;letter-spacing:.08em;cursor:pointer;">
-        REFRESH
-      </button>
-    </div>
-    <input id="iptv-filter" type="text" placeholder="Filter streams..."
-           style="width:100%;background:var(--input-bg);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:8px 12px;font-family:monospace;margin-bottom:12px;">
-    <div class="feed-status" id="iptv-status">Open this tab to load IPTV lists.</div>
-    <div id="iptv-streams"></div>
-  </div>
-</div>
-
-<!-- ── Acestream tab ── -->
-<div class="tab-panel" id="tab-ace">
-  <details class="card playback-card">
-    <summary>Playback options</summary>
-    <div class="playback-inner" style="display:flex;flex-direction:column;gap:8px;">
-      <div id="ace-mode-btns" style="display:flex;gap:6px;flex-wrap:wrap;"></div>
-      <div id="ace-quality-btns" style="display:flex;gap:6px;flex-wrap:wrap;"></div>
-      <div id="ace-profile-btns" style="display:flex;gap:6px;flex-wrap:wrap;"></div>
-      <div id="ace-sync-btns" style="display:flex;gap:6px;flex-wrap:wrap;"></div>
-    </div>
-  </details>
-  <div class="card">
-    <h2>Stream by content ID</h2>
-    <p style="font-size:.85rem;color:var(--muted);margin-bottom:12px;">
-      Enter an Acestream content ID (40-char hex) or a full
-      <code style="color:var(--text);">acestream://</code> link.
-      Your acestream-http-proxy must be running.
-    </p>
-    <div class="feed-controls">
-      <input id="ace-id" type="text" placeholder="acestream://b08e… or content ID">
-      <input id="ace-host" type="text" placeholder="Proxy host:port"
-             style="max-width:200px;">
-      <button id="ace-go">OPEN STREAM</button>
-    </div>
-  </div>
-  <div class="card">
-    <h2>Saved streams</h2>
-    <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:14px;">
-      <input id="ace-save-name" type="text" placeholder="Name"
-             style="flex:1;min-width:140px;background:var(--input-bg);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:8px 12px;font-family:monospace;">
-      <input id="ace-save-id" type="text" placeholder="Content ID or acestream:// link"
-             style="flex:2;min-width:220px;background:var(--input-bg);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:8px 12px;font-family:monospace;">
-      <button id="ace-save-btn"
-              style="background:var(--red);color:white;border:0;border-radius:6px;padding:8px 14px;font-family:'Orbitron',monospace;font-size:.7rem;letter-spacing:.08em;cursor:pointer;">
-        SAVE
-      </button>
-    </div>
-    <div id="ace-saved-list"></div>
-  </div>
-</div>
-
-<!-- ── Info tab ── -->
-<div class="tab-panel" id="tab-local">
-  <details class="card playback-card">
-    <summary>Playback options</summary>
-    <div class="playback-inner" style="display:flex;flex-direction:column;gap:10px;">
-      <div id="local-mode-btns" style="display:flex;gap:6px;flex-wrap:wrap;"></div>
-      <div id="local-profile-btns" style="display:flex;gap:6px;flex-wrap:wrap;"></div>
-      <div id="local-sync-btns" style="display:flex;gap:6px;flex-wrap:wrap;"></div>
-      <div>
-        <button id="local-refresh"
-                style="background:var(--red);color:white;border:0;border-radius:6px;padding:8px 14px;font-family:'Orbitron',monospace;font-size:.7rem;letter-spacing:.08em;cursor:pointer;">
-          REFRESH LIST
-        </button>
+    <div class="tab-panel" id="tab-pluto">
+      <details class="card playback-card">
+        <summary>Playback options</summary>
+        <div class="playback-inner" style="display:flex;flex-direction:column;gap:12px; padding-top:14px;">
+          <div style="display:flex; align-items:center; gap:8px;"><span style="font-size:0.7rem; font-weight:750; color:var(--text-muted); text-transform:uppercase;">Format:</span><div id="pluto-mode-btns" style="display:flex;gap:6px;flex-wrap:wrap;"></div></div>
+          <div style="display:flex; align-items:center; gap:8px;"><span style="font-size:0.7rem; font-weight:750; color:var(--text-muted); text-transform:uppercase;">Profile:</span><div id="pluto-profile-btns" style="display:flex;gap:6px;flex-wrap:wrap;"></div></div>
+          <div style="display:flex; align-items:center; gap:8px;"><span style="font-size:0.7rem; font-weight:750; color:var(--text-muted); text-transform:uppercase;">Audio Delay:</span><div id="pluto-sync-btns" style="display:flex;gap:6px;flex-wrap:wrap;"></div></div>
+        </div>
+      </details>
+      
+      <div class="card">
+        <h2>
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="stroke:var(--accent);"><circle cx="12" cy="12" r="10"></circle><line x1="2" y1="12" x2="22" y2="12"></line><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
+          Pluto TV Channels
+        </h2>
+        <div id="pluto-lang-btns" style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:20px;"></div>
+        <div class="feed-status" id="pluto-status">Open this tab to load channels.</div>
+        <input id="pluto-filter" type="text" placeholder="Filter channels..." style="margin-bottom:16px;">
+        <div id="pluto-list" style="max-height:520px;overflow-y:auto;border:1px solid var(--border);border-radius:12px;padding:8px;"></div>
       </div>
     </div>
-      <p style="font-size:.82rem;color:var(--muted);margin-top:12px;">
-        Folder: <code style="color:var(--text);">{{local_media_dir}}</code>
-      </p>
-    </div>
-  </details>
-  <div class="card">
-    <h2>Video files</h2>
-    <div class="feed-status" id="local-status">Open this tab to load local videos.</div>
-    <div id="local-list"></div>
-  </div>
-</div>
 
-<!-- ── Info tab ── -->
-<div class="tab-panel" id="tab-info">
-  <div class="card">
-    <h2>API usage</h2>
-    <div class="usage">
-      GET /watch<span>?url=</span>https://youtube.com/watch?v=VIDEO_ID<br>
-      GET /watch<span>?url=</span>https://www.twitch.tv/CHANNEL<br>
-      GET /watch<span>?url=</span>https://x.com/user/status/ID<br>
-      GET /watch<span>?url=</span>https://…<span>&amp;quality=720&amp;sync=1000</span><br>
-      GET /feed<span>?channel=</span>@handle<span>&amp;limit=12</span>  → JSON video list<br>
-      GET /local_media  → JSON local video list<br>
-      GET /local_watch<span>?file=</span>relative/path.mp4<span>&amp;sync=1000</span><br>
-      GET /iptv_lists  → JSON IPTV playlists from mounted folder<br>
-      GET /iptv_streams<span>?list=</span>my-list<br>
-      GET /subscriptions  → JSON channel list<br>
-      GET /health   → JSON health check<br>
-      GET /status   → JSON active streams
+    <div class="tab-panel" id="tab-iptv">
+      <details class="card playback-card">
+        <summary>Playback options</summary>
+        <div class="playback-inner" style="display:flex;flex-direction:column;gap:12px; padding-top:14px;">
+          <div style="display:flex; align-items:center; gap:8px;"><span style="font-size:0.7rem; font-weight:750; color:var(--text-muted); text-transform:uppercase;">Format:</span><div id="iptv-mode-btns" style="display:flex;gap:6px;flex-wrap:wrap;"></div></div>
+          <div style="display:flex; align-items:center; gap:8px;"><span style="font-size:0.7rem; font-weight:750; color:var(--text-muted); text-transform:uppercase;">Quality:</span><div id="iptv-quality-btns" style="display:flex;gap:6px;flex-wrap:wrap;"></div></div>
+          <div style="display:flex; align-items:center; gap:8px;"><span style="font-size:0.7rem; font-weight:750; color:var(--text-muted); text-transform:uppercase;">Profile:</span><div id="iptv-profile-btns" style="display:flex;gap:6px;flex-wrap:wrap;"></div></div>
+          <div style="display:flex; align-items:center; gap:8px;"><span style="font-size:0.7rem; font-weight:750; color:var(--text-muted); text-transform:uppercase;">Audio Delay:</span><div id="iptv-sync-btns" style="display:flex;gap:6px;flex-wrap:wrap;"></div></div>
+        </div>
+      </details>
+      
+      <div class="card">
+        <h2>
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="stroke:var(--accent);"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
+          IPTV playlists
+        </h2>
+        <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:center;margin-bottom:20px;">
+          <button id="iptv-prev" style="background:transparent !important;color:var(--text) !important;border:1px solid var(--border) !important;box-shadow:none !important;padding:12px 18px !important;">◄</button>
+          <div id="iptv-list-name" style="flex:1;min-width:200px;color:var(--text);font-size:0.9rem;font-weight:600;text-align:center;padding:14px;border:1px solid var(--border);border-radius:10px;background:rgba(255,255,255,0.02);">
+            Select a playlist
+          </div>
+          <button id="iptv-next" style="background:transparent !important;color:var(--text) !important;border:1px solid var(--border) !important;box-shadow:none !important;padding:12px 18px !important;">►</button>
+          <button id="iptv-refresh">Refresh</button>
+        </div>
+        <input id="iptv-filter" type="text" placeholder="Filter streams..." style="margin-bottom:16px;">
+        <div class="feed-status" id="iptv-status">Open this tab to load IPTV lists.</div>
+        <div id="iptv-streams" style="max-height:500px; overflow-y:auto; border:1px solid var(--border); border-radius:12px; padding:8px;"></div>
+      </div>
     </div>
-  </div>
-</div>
 
-<footer>Tesla is a trademark of Tesla, Inc. OpenCarStream is unofficial and not affiliated with or endorsed by Tesla. YouTube is a trademark of Google LLC, Twitch is a trademark of Twitch Interactive, Inc., and X/Twitter is a trademark of X Corp.; OpenCarStream is not affiliated with or endorsed by any of them.</footer>
+    <div class="tab-panel" id="tab-ace">
+      <details class="card playback-card">
+        <summary>Playback options</summary>
+        <div class="playback-inner" style="display:flex;flex-direction:column;gap:12px; padding-top:14px;">
+          <div style="display:flex; align-items:center; gap:8px;"><span style="font-size:0.7rem; font-weight:750; color:var(--text-muted); text-transform:uppercase;">Format:</span><div id="ace-mode-btns" style="display:flex;gap:6px;flex-wrap:wrap;"></div></div>
+          <div style="display:flex; align-items:center; gap:8px;"><span style="font-size:0.7rem; font-weight:750; color:var(--text-muted); text-transform:uppercase;">Quality:</span><div id="ace-quality-btns" style="display:flex;gap:6px;flex-wrap:wrap;"></div></div>
+          <div style="display:flex; align-items:center; gap:8px;"><span style="font-size:0.7rem; font-weight:750; color:var(--text-muted); text-transform:uppercase;">Profile:</span><div id="ace-profile-btns" style="display:flex;gap:6px;flex-wrap:wrap;"></div></div>
+          <div style="display:flex; align-items:center; gap:8px;"><span style="font-size:0.7rem; font-weight:750; color:var(--text-muted); text-transform:uppercase;">Audio Delay:</span><div id="ace-sync-btns" style="display:flex;gap:6px;flex-wrap:wrap;"></div></div>
+        </div>
+      </details>
+      
+      <div class="card">
+        <h2>
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="stroke:var(--accent);"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
+          Acestream Content ID
+        </h2>
+        <p style="font-size:0.85rem;color:var(--text-secondary);margin-bottom:16px;">
+          Enter an Acestream content ID (40-char hex) or a full <code style="color:var(--text); background:rgba(255,255,255,0.04); padding:2px 6px; border-radius:4px;">acestream://</code> link.
+        </p>
+        <div style="display:flex; flex-direction:column; gap:14px; margin-bottom:20px;">
+          <input id="ace-id" type="text" placeholder="acestream:// or hex content ID...">
+          <input id="ace-host" type="text" placeholder="Proxy Host (e.g. 192.168.1.7:6878)">
+          <div><button id="ace-go">Open Stream</button></div>
+        </div>
+      </div>
+      
+      <div class="card">
+        <h2>
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="stroke:var(--accent);"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path><polyline points="17 21 17 13 7 13 7 21"></polyline><polyline points="7 3 7 8 15 8"></polyline></svg>
+          Saved Acestreams
+        </h2>
+        <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:center;margin-bottom:20px;">
+          <input id="ace-save-name" type="text" placeholder="Stream Name" style="flex:1;min-width:150px;">
+          <input id="ace-save-id" type="text" placeholder="Content ID or link" style="flex:2;min-width:250px;">
+          <button id="ace-save-btn">Save</button>
+        </div>
+        <div id="ace-saved-list" style="max-height:300px; overflow-y:auto; border:1px solid var(--border); border-radius:12px; padding:8px;"></div>
+      </div>
+    </div>
+
+    <div class="tab-panel" id="tab-local">
+      <details class="card playback-card">
+        <summary>Playback options</summary>
+        <div class="playback-inner" style="display:flex;flex-direction:column;gap:12px; padding-top:14px;">
+          <div style="display:flex; align-items:center; gap:8px;"><span style="font-size:0.7rem; font-weight:750; color:var(--text-muted); text-transform:uppercase;">Format:</span><div id="local-mode-btns" style="display:flex;gap:6px;flex-wrap:wrap;"></div></div>
+          <div style="display:flex; align-items:center; gap:8px;"><span style="font-size:0.7rem; font-weight:750; color:var(--text-muted); text-transform:uppercase;">Profile:</span><div id="local-profile-btns" style="display:flex;gap:6px;flex-wrap:wrap;"></div></div>
+          <div style="display:flex; align-items:center; gap:8px;"><span style="font-size:0.7rem; font-weight:750; color:var(--text-muted); text-transform:uppercase;">Audio Delay:</span><div id="local-sync-btns" style="display:flex;gap:6px;flex-wrap:wrap;"></div></div>
+          <div style="margin-top:10px;"><button id="local-refresh">Refresh List</button></div>
+        </div>
+        <div style="padding:0 28px 18px;">
+          <p style="font-size:0.8rem;color:var(--text-muted);">
+            Folder: <code style="color:var(--text-secondary); background:rgba(255,255,255,0.04); padding:2px 6px; border-radius:4px;">{{local_media_dir}}</code>
+          </p>
+        </div>
+      </details>
+      
+      <div class="card">
+        <h2>
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="stroke:var(--accent);"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>
+          Video files browser
+        </h2>
+        <div class="feed-status" id="local-status">Open this tab to scan directory.</div>
+        <div id="local-list" style="max-height:600px; overflow-y:auto; border:1px solid var(--border); border-radius:12px; padding:12px;"></div>
+      </div>
+    </div>
+
+    <div class="tab-panel" id="tab-info">
+      <div class="card">
+        <h2>
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="stroke:var(--accent);"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>
+          API Reference Info
+        </h2>
+        <div class="usage">
+          GET /watch<span>?url=</span>https://youtube.com/watch?v=VIDEO_ID<br>
+          GET /watch<span>?url=</span>https://www.twitch.tv/CHANNEL<br>
+          GET /watch<span>?url=</span>https://x.com/user/status/ID<br>
+          GET /watch<span>?url=</span>https://…<span>&amp;quality=720&amp;sync=1000</span><br>
+          GET /feed<span>?channel=</span>@handle<span>&amp;limit=12</span>  → JSON video list<br>
+          GET /local_media  → JSON local video list<br>
+          GET /local_watch<span>?file=</span>relative/path.mp4<span>&amp;sync=1000</span><br>
+          GET /iptv_lists  → JSON IPTV playlists from mounted folder<br>
+          GET /iptv_streams<span>?list=</span>my-list<br>
+          GET /subscriptions  → JSON channel list<br>
+          GET /health   → JSON health check<br>
+          GET /status   → JSON active streams
+        </div>
+      </div>
+    </div>
+
+    <footer>
+      <p>Tesla is a trademark of Tesla, Inc. OpenCarStream is unofficial and not affiliated with or endorsed by Tesla.</p>
+      <p style="margin-top:4px;">YouTube, Twitch, Pluto TV, and X/Twitter are trademarks of their respective owners.</p>
+    </footer>
+  </main>
+</div>ndorsed by any of them.</footer>
 <p id="weather-text" style="margin-top:10px;color:var(--muted);font-size:.85rem;text-align:center;"></p>
 
 <script>
@@ -660,13 +1319,52 @@ STATUS_HTML = """<!DOCTYPE html>
   Array.prototype.forEach.call(tabBtns, function (btn) {
     btn.addEventListener("click", function () {
       var target = btn.getAttribute("data-tab");
-      Array.prototype.forEach.call(tabBtns, function (b) { b.classList.remove("active"); });
+      if (!target) return; // Ignore theme toggle or non-tab buttons
+      Array.prototype.forEach.call(tabBtns, function (b) { if (b.getAttribute("data-tab")) b.classList.remove("active"); });
       Array.prototype.forEach.call(tabPanels, function (p) { p.classList.remove("active"); });
       btn.classList.add("active");
       var panel = document.getElementById("tab-" + target);
       if (panel) panel.classList.add("active");
+      
+      // Update header title dynamically
+      var textSpan = btn.querySelector("span");
+      if (textSpan) {
+        document.getElementById("main-header-title").textContent = textSpan.textContent;
+      }
     });
   });
+
+  // ── Theme toggle logic ──
+  (function () {
+    var themeToggle = document.getElementById("theme-toggle");
+    var sunIcon = themeToggle.querySelector(".sun-icon");
+    var moonIcon = themeToggle.querySelector(".moon-icon");
+    
+    var currentTheme = localStorage.getItem("theme") || (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+    
+    function applyTheme(theme) {
+      if (theme === "dark") {
+        document.documentElement.classList.add("theme-dark");
+        document.documentElement.classList.remove("theme-light");
+        sunIcon.style.display = "block";
+        moonIcon.style.display = "none";
+      } else {
+        document.documentElement.classList.add("theme-light");
+        document.documentElement.classList.remove("theme-dark");
+        sunIcon.style.display = "none";
+        moonIcon.style.display = "block";
+      }
+      localStorage.setItem("theme", theme);
+    }
+    
+    applyTheme(currentTheme);
+    
+    themeToggle.addEventListener("click", function (e) {
+      e.preventDefault();
+      var nextTheme = document.documentElement.classList.contains("theme-dark") ? "light" : "dark";
+      applyTheme(nextTheme);
+    });
+  })();
 
   try {
   // ── Shared utilities ──
@@ -2035,43 +2733,392 @@ WATCH_HTML = """<!DOCTYPE html>
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>OpenCarStream Watch</title>
 <style>
-  @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@700;900&family=Rajdhani:wght@300;500&display=swap');
-  :root{--red:#e31937;--dark:#090909;--panel:#111117;--border:#252530;--text:#e0e0ee;}
-  @media(prefers-color-scheme:light){:root{--dark:#f4f4f6;--panel:#ffffff;--border:#d8d8e0;--text:#1a1a2e;}}
-  *{margin:0;padding:0;box-sizing:border-box;}
-  body{background:var(--dark);color:var(--text);font-family:'Rajdhani',sans-serif;min-height:100vh;display:flex;flex-direction:column;align-items:center;padding:16px;}
-  .top{width:100%;max-width:1280px;display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;gap:12px;flex-wrap:wrap;}
-  .top-actions{display:flex;align-items:center;gap:10px;}
-  .title{font-family:'Orbitron',monospace;letter-spacing:.1em;color:var(--red);font-size:1rem;}
-  .back{color:var(--red);text-decoration:none;font-family:monospace;}
-  .wrap{width:100%;max-width:1280px;background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:10px;}
-  img{width:100%;height:auto;display:block;background:black;border-radius:8px;}
-  audio{width:100%;margin-top:10px;}
-  .diag{margin-top:10px;padding:10px 12px;border:1px solid var(--border);border-radius:8px;font-family:monospace;font-size:.85rem;line-height:1.4;white-space:pre-wrap;color:#f0b5bf;background:#160d11;display:none;}
-  .seek-bar{display:flex;align-items:center;gap:10px;margin-top:10px;flex-wrap:wrap;}
-  .seek-btn{background:var(--panel);border:1px solid var(--border);color:var(--text);font-family:'Rajdhani',sans-serif;font-size:1rem;font-weight:500;padding:6px 14px;border-radius:6px;cursor:pointer;transition:border-color .15s,color .15s;}
-  .seek-btn:hover{border-color:var(--red);color:var(--red);}
-  .seek-btn.active{border-color:var(--red);color:var(--red);}
-  .seek-pending{font-family:monospace;font-size:.9rem;color:var(--red);min-width:80px;}
-  .seek-cancel{background:none;border:none;color:#888;font-size:.8rem;cursor:pointer;text-decoration:underline;padding:0;}
-  .elapsed{font-family:monospace;font-size:1rem;color:var(--text);margin-left:auto;letter-spacing:.05em;}
-  .live-badge{font-family:'Orbitron',monospace;font-size:.65rem;letter-spacing:.12em;color:#fff;background:var(--red);padding:2px 7px;border-radius:3px;text-transform:uppercase;margin-left:auto;display:none;}
-  .resume-banner{margin-top:10px;padding:10px 14px;background:#1a1200;border:1px solid #6b4f00;border-radius:6px;font-size:.9rem;display:flex;align-items:center;gap:12px;flex-wrap:wrap;}
-  .resume-banner a{color:#f5c518;font-weight:600;cursor:pointer;text-decoration:underline;}
-  .resume-banner .dismiss{color:#888;font-size:.8rem;cursor:pointer;text-decoration:underline;background:none;border:none;}
-  .stream-title{font-size:.95rem;color:var(--text);font-family:'Rajdhani',sans-serif;font-weight:500;padding:8px 4px 2px;letter-spacing:.02em;min-height:1.4em;}
-  .sync-bar{display:flex;align-items:center;gap:8px;margin-top:8px;flex-wrap:wrap;padding:8px 4px;border-top:1px solid var(--border);}
-  .sync-label{font-family:'Orbitron',monospace;font-size:.65rem;letter-spacing:.1em;color:var(--muted);text-transform:uppercase;}
-  .sync-btn{background:var(--panel);border:1px solid var(--border);color:var(--text);font-family:'Rajdhani',sans-serif;font-size:1rem;font-weight:500;padding:6px 14px;border-radius:6px;cursor:pointer;}
-  .sync-btn:hover{border-color:var(--red);color:var(--red);}
-  .sync-val{font-family:monospace;font-size:.95rem;color:var(--red);min-width:60px;text-align:center;}
-  .icon-btn{background:var(--panel);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:8px 12px;font-family:'Orbitron',monospace;cursor:pointer;}
-  .settings-panel{display:none;margin:0 auto 12px;width:100%;max-width:1280px;background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:16px;gap:12px;}
-  .settings-panel.open{display:flex;flex-direction:column;}
-  .settings-grid{display:flex;flex-direction:column;gap:10px;}
-  .settings-row{display:flex;gap:6px;flex-wrap:wrap;}
-  .settings-label-strong{font-family:'Orbitron',monospace;font-size:.7rem;letter-spacing:.1em;color:var(--muted);text-transform:uppercase;}
-  .settings-apply{align-self:flex-start;background:var(--red);color:#fff;border:0;border-radius:8px;padding:10px 16px;font-family:'Orbitron',monospace;letter-spacing:.08em;cursor:pointer;}
+  @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800;900&family=Inter:wght@400;500;600;700&display=swap');
+  
+  :root {
+    --bg: #09080c;
+    --panel: rgba(20, 19, 26, 0.7);
+    --panel-solid: #121118;
+    --border: rgba(255, 255, 255, 0.08);
+    --accent: #ff3b5c;
+    --accent-glow: rgba(255, 59, 92, 0.2);
+    --accent-gradient: linear-gradient(135deg, #ff3b5c 0%, #d61234 100%);
+    --text: #f4f3f6;
+    --text-secondary: #9e9ba7;
+    --text-muted: #5e5a66;
+    --red: var(--accent);
+  }
+  
+  :root.theme-light {
+    --bg: #f4f4f7;
+    --panel: rgba(255, 255, 255, 0.8);
+    --panel-solid: #ffffff;
+    --border: rgba(0, 0, 0, 0.08);
+    --accent: #ff3b5c;
+    --accent-glow: rgba(255, 59, 92, 0.15);
+    --accent-gradient: linear-gradient(135deg, #ff3b5c 0%, #e31937 100%);
+    --text: #1a191f;
+    --text-secondary: #5e5c66;
+    --text-muted: #9a98a0;
+  }
+
+  :root.theme-dark {
+    --bg: #09080c;
+    --panel: rgba(20, 19, 26, 0.7);
+    --panel-solid: #121118;
+    --border: rgba(255, 255, 255, 0.08);
+    --accent: #ff3b5c;
+    --accent-glow: rgba(255, 59, 92, 0.2);
+    --accent-gradient: linear-gradient(135deg, #ff3b5c 0%, #d61234 100%);
+    --text: #f4f3f6;
+    --text-secondary: #9e9ba7;
+    --text-muted: #5e5a66;
+  }
+  
+  @media(prefers-color-scheme:light) {
+    :root:not(.theme-dark) {
+      --bg: #f4f4f7;
+      --panel: rgba(255, 255, 255, 0.8);
+      --panel-solid: #ffffff;
+      --border: rgba(0, 0, 0, 0.08);
+      --accent: #ff3b5c;
+      --accent-glow: rgba(255, 59, 92, 0.15);
+      --accent-gradient: linear-gradient(135deg, #ff3b5c 0%, #e31937 100%);
+      --text: #1a191f;
+      --text-secondary: #5e5c66;
+      --text-muted: #9a98a0;
+    }
+  }
+  
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Inter', sans-serif;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 24px 16px;
+  }
+  
+  .top {
+    width: 100%;
+    max-width: 1280px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 16px;
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+  
+  .top-actions {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  
+  .title {
+    font-family: 'Outfit', sans-serif;
+    font-weight: 800;
+    letter-spacing: -0.01em;
+    color: var(--text);
+    font-size: 1.25rem;
+  }
+  
+  .back {
+    color: var(--text-secondary);
+    text-decoration: none;
+    font-family: 'Outfit', sans-serif;
+    font-weight: 600;
+    font-size: 0.95rem;
+    transition: color 0.2s;
+  }
+  
+  .back:hover {
+    color: var(--accent);
+  }
+  
+  .wrap {
+    width: 100%;
+    max-width: 1280px;
+    background: var(--panel);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 16px;
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
+  }
+  
+  img {
+    width: 100%;
+    height: auto;
+    aspect-ratio: 16/9;
+    display: block;
+    background: black;
+    border-radius: 12px;
+  }
+  
+  audio {
+    width: 100%;
+    margin-top: 16px;
+    border-radius: 8px;
+  }
+  
+  .diag {
+    margin-top: 16px;
+    padding: 16px;
+    border: 1px solid rgba(255, 59, 92, 0.25);
+    border-radius: 12px;
+    font-family: monospace;
+    font-size: 0.85rem;
+    line-height: 1.4;
+    white-space: pre-wrap;
+    color: var(--accent);
+    background: rgba(255, 59, 92, 0.05);
+    display: none;
+  }
+  
+  .seek-bar {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-top: 16px;
+    flex-wrap: wrap;
+  }
+  
+  .seek-btn {
+    background: var(--panel-solid);
+    border: 1px solid var(--border);
+    color: var(--text-secondary);
+    font-family: 'Outfit', sans-serif;
+    font-size: 0.9rem;
+    font-weight: 600;
+    padding: 8px 16px;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+  
+  .seek-btn:hover {
+    border-color: var(--accent);
+    color: var(--accent);
+  }
+  
+  .seek-btn.active {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: #fff;
+  }
+  
+  .seek-pending {
+    font-family: monospace;
+    font-size: .9rem;
+    color: var(--accent);
+    min-width: 80px;
+  }
+  
+  .seek-cancel {
+    background: none;
+    border: none;
+    color: var(--text-muted);
+    font-size: .85rem;
+    cursor: pointer;
+    text-decoration: underline;
+    padding: 0;
+  }
+  
+  .elapsed {
+    font-family: monospace;
+    font-size: 1rem;
+    color: var(--text);
+    margin-left: auto;
+    letter-spacing: .05em;
+  }
+  
+  .live-badge {
+    font-family: 'Outfit', sans-serif;
+    font-size: .75rem;
+    font-weight: 700;
+    letter-spacing: .05em;
+    color: #fff;
+    background: var(--accent);
+    padding: 4px 10px;
+    border-radius: 6px;
+    text-transform: uppercase;
+    margin-left: auto;
+    display: none;
+    box-shadow: 0 0 10px var(--accent-glow);
+  }
+  
+  .resume-banner {
+    margin-top: 16px;
+    padding: 12px 18px;
+    background: rgba(255, 179, 0, 0.1);
+    border: 1px solid rgba(255, 179, 0, 0.25);
+    border-radius: 12px;
+    font-family: 'Outfit', sans-serif;
+    font-size: 0.95rem;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+  
+  .resume-banner a {
+    color: #f5c518;
+    font-weight: 600;
+    cursor: pointer;
+    text-decoration: underline;
+  }
+  
+  .resume-banner .dismiss {
+    color: var(--text-muted);
+    font-size: .85rem;
+    cursor: pointer;
+    text-decoration: underline;
+    background: none;
+    border: none;
+  }
+  
+  .stream-title {
+    font-size: 1.1rem;
+    color: var(--text);
+    font-family: 'Outfit', sans-serif;
+    font-weight: 700;
+    padding: 16px 8px 8px;
+    letter-spacing: -0.01em;
+    min-height: 1.4em;
+  }
+  
+  .sync-bar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 16px;
+    flex-wrap: wrap;
+    padding: 16px 4px 8px;
+    border-top: 1px solid var(--border);
+  }
+  
+  .sync-label {
+    font-family: 'Outfit', sans-serif;
+    font-size: .75rem;
+    font-weight: 700;
+    letter-spacing: .05em;
+    color: var(--text-muted);
+    text-transform: uppercase;
+  }
+  
+  .sync-btn {
+    background: var(--panel-solid);
+    border: 1px solid var(--border);
+    color: var(--text-secondary);
+    font-family: 'Outfit', sans-serif;
+    font-size: 0.9rem;
+    font-weight: 600;
+    padding: 8px 16px;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+  
+  .sync-btn:hover {
+    border-color: var(--accent);
+    color: var(--accent);
+  }
+  
+  .sync-val {
+    font-family: monospace;
+    font-size: .95rem;
+    color: var(--accent);
+    min-width: 60px;
+    text-align: center;
+  }
+  
+  .icon-btn {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    color: var(--text);
+    border-radius: 10px;
+    padding: 10px 14px;
+    font-size: 1.1rem;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s;
+  }
+  
+  .icon-btn:hover {
+    background: rgba(255, 255, 255, 0.08);
+    border-color: var(--text-secondary);
+  }
+  
+  .settings-panel {
+    display: none;
+    margin: 0 auto 16px;
+    width: 100%;
+    max-width: 1280px;
+    background: var(--panel);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 24px;
+    gap: 16px;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
+  }
+  
+  .settings-panel.open {
+    display: flex;
+    flex-direction: column;
+  }
+  
+  .settings-grid {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+  
+  .settings-row {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+  
+  .settings-label-strong {
+    font-family: 'Outfit', sans-serif;
+    font-size: 0.75rem;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+  }
+  
+  .settings-apply {
+    align-self: flex-start;
+    background: var(--accent-gradient);
+    color: #fff;
+    border: 0;
+    border-radius: 10px;
+    padding: 12px 24px;
+    font-family: 'Outfit', sans-serif;
+    font-weight: 700;
+    font-size: 0.9rem;
+    letter-spacing: 0.05em;
+    cursor: pointer;
+    box-shadow: 0 4px 14px var(--accent-glow);
+    transition: transform 0.2s, box-shadow 0.2s;
+  }
+  
+  .settings-apply:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 6px 20px var(--accent-glow);
+  }
 </style>
 </head>
 <body>
@@ -2128,6 +3175,15 @@ WATCH_HTML = """<!DOCTYPE html>
   </div>
 <script>
 (function () {
+  var currentTheme = localStorage.getItem("theme") || (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+  if (currentTheme === "light") {
+    document.documentElement.classList.add("theme-light");
+    document.documentElement.classList.remove("theme-dark");
+  } else {
+    document.documentElement.classList.add("theme-dark");
+    document.documentElement.classList.remove("theme-light");
+  }
+
   var sid = "{{stream_id}}";
   var syncMs = "{{sync_ms}}";
   var videoUrl = "{{video_url}}";
@@ -2162,7 +3218,7 @@ WATCH_HTML = """<!DOCTYPE html>
       btn.type = "button";
       btn.textContent = opt.label;
       btn.setAttribute("data-value", opt.value);
-      btn.style.cssText = "font-family:'Orbitron',monospace;font-size:.7rem;letter-spacing:.08em;padding:6px 12px;border-radius:6px;border:1px solid var(--border);background:transparent;color:var(--text);cursor:pointer;";
+      btn.style.cssText = "font-family:'Outfit',sans-serif;font-size:.8rem;font-weight:600;letter-spacing:.02em;padding:8px 16px;border-radius:8px;border:1px solid var(--border);background:transparent;color:var(--text-secondary);cursor:pointer;transition:all 0.2s;";
       btn.addEventListener("click", function () {
         state.value = opt.value;
         refresh();
@@ -2172,8 +3228,9 @@ WATCH_HTML = """<!DOCTYPE html>
     function refresh() {
       Array.prototype.forEach.call(container.querySelectorAll("button"), function (btn) {
         var active = btn.getAttribute("data-value") === state.value;
-        btn.style.background = active ? "var(--red)" : "transparent";
-        btn.style.color = active ? "#fff" : "var(--text)";
+        btn.style.background = active ? "var(--accent)" : "transparent";
+        btn.style.borderColor = active ? "var(--accent)" : "var(--border)";
+        btn.style.color = active ? "#fff" : "var(--text-secondary)";
       });
     }
     refresh();
@@ -2527,35 +3584,318 @@ AUDIO_WATCH_HTML = """<!DOCTYPE html>
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>OpenCarStream — Audio</title>
 <style>
-  @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@700;900&family=Rajdhani:wght@300;500&display=swap');
-  :root{--red:#e31937;--dark:#090909;--panel:#111117;--border:#252530;--text:#e0e0ee;--muted:#555568;}
-  @media(prefers-color-scheme:light){:root{--dark:#f4f4f6;--panel:#ffffff;--border:#d8d8e0;--text:#1a1a2e;--muted:#888899;}}
-  *{margin:0;padding:0;box-sizing:border-box;}
-  body{background:var(--dark);color:var(--text);font-family:'Rajdhani',sans-serif;min-height:100vh;display:flex;flex-direction:column;align-items:center;padding:16px;}
-  .top{width:100%;max-width:720px;display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;gap:12px;}
-  .top-actions{display:flex;align-items:center;gap:10px;}
-  .title{font-family:'Orbitron',monospace;letter-spacing:.1em;color:var(--red);font-size:1rem;}
-  .back{color:var(--red);text-decoration:none;font-family:monospace;}
-  .wrap{width:100%;max-width:720px;background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:28px 24px;display:flex;flex-direction:column;gap:14px;}
-  audio{width:100%;}
-  .stream-title{font-size:1rem;color:var(--text);font-family:'Rajdhani',sans-serif;font-weight:500;letter-spacing:.02em;min-height:1.4em;}
-  .diag{padding:10px 12px;border:1px solid var(--border);border-radius:8px;font-family:monospace;font-size:.85rem;line-height:1.4;white-space:pre-wrap;color:#f0b5bf;background:#160d11;display:none;}
-  .status{font-family:'Orbitron',monospace;font-size:.7rem;letter-spacing:.1em;color:var(--red);text-transform:uppercase;}
-  .seek-bar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding-top:10px;border-top:1px solid var(--border);}
-  .seek-btn{background:var(--panel);border:1px solid var(--border);color:var(--text);font-family:'Rajdhani',sans-serif;font-size:.95rem;font-weight:500;padding:6px 12px;border-radius:6px;cursor:pointer;}
-  .seek-btn:hover{border-color:var(--red);color:var(--red);}
-  .elapsed{font-family:monospace;font-size:1rem;color:var(--text);margin-left:auto;letter-spacing:.05em;}
-  .live-badge{font-family:'Orbitron',monospace;font-size:.65rem;letter-spacing:.12em;color:#fff;background:var(--red);padding:2px 7px;border-radius:3px;margin-left:auto;display:none;}
-  .seek-label{font-family:'Orbitron',monospace;font-size:.65rem;letter-spacing:.1em;color:var(--muted);text-transform:uppercase;}
-  .seek-pending{font-family:monospace;font-size:.85rem;color:var(--red);}
-  .seek-cancel{background:none;border:none;color:#888;font-size:.8rem;cursor:pointer;text-decoration:underline;padding:0;}
-  .icon-btn{background:var(--panel);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:8px 12px;font-family:'Orbitron',monospace;cursor:pointer;}
-  .settings-panel{display:none;margin:0 auto 12px;width:100%;max-width:720px;background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:16px;gap:12px;}
-  .settings-panel.open{display:flex;flex-direction:column;}
-  .settings-grid{display:flex;flex-direction:column;gap:10px;}
-  .settings-row{display:flex;gap:6px;flex-wrap:wrap;}
-  .settings-label-strong{font-family:'Orbitron',monospace;font-size:.7rem;letter-spacing:.1em;color:var(--muted);text-transform:uppercase;}
-  .settings-apply{align-self:flex-start;background:var(--red);color:#fff;border:0;border-radius:8px;padding:10px 16px;font-family:'Orbitron',monospace;letter-spacing:.08em;cursor:pointer;}
+  @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800;900&family=Inter:wght@400;500;600;700&display=swap');
+  
+  :root {
+    --bg: #09080c;
+    --panel: rgba(20, 19, 26, 0.7);
+    --panel-solid: #121118;
+    --border: rgba(255, 255, 255, 0.08);
+    --accent: #ff3b5c;
+    --accent-glow: rgba(255, 59, 92, 0.2);
+    --accent-gradient: linear-gradient(135deg, #ff3b5c 0%, #d61234 100%);
+    --text: #f4f3f6;
+    --text-secondary: #9e9ba7;
+    --text-muted: #5e5a66;
+    --red: var(--accent);
+  }
+  
+  :root.theme-light {
+    --bg: #f4f4f7;
+    --panel: rgba(255, 255, 255, 0.8);
+    --panel-solid: #ffffff;
+    --border: rgba(0, 0, 0, 0.08);
+    --accent: #ff3b5c;
+    --accent-glow: rgba(255, 59, 92, 0.15);
+    --accent-gradient: linear-gradient(135deg, #ff3b5c 0%, #e31937 100%);
+    --text: #1a191f;
+    --text-secondary: #5e5c66;
+    --text-muted: #9a98a0;
+  }
+
+  :root.theme-dark {
+    --bg: #09080c;
+    --panel: rgba(20, 19, 26, 0.7);
+    --panel-solid: #121118;
+    --border: rgba(255, 255, 255, 0.08);
+    --accent: #ff3b5c;
+    --accent-glow: rgba(255, 59, 92, 0.2);
+    --accent-gradient: linear-gradient(135deg, #ff3b5c 0%, #d61234 100%);
+    --text: #f4f3f6;
+    --text-secondary: #9e9ba7;
+    --text-muted: #5e5a66;
+  }
+  
+  @media(prefers-color-scheme:light) {
+    :root:not(.theme-dark) {
+      --bg: #f4f4f7;
+      --panel: rgba(255, 255, 255, 0.8);
+      --panel-solid: #ffffff;
+      --border: rgba(0, 0, 0, 0.08);
+      --accent: #ff3b5c;
+      --accent-glow: rgba(255, 59, 92, 0.15);
+      --accent-gradient: linear-gradient(135deg, #ff3b5c 0%, #e31937 100%);
+      --text: #1a191f;
+      --text-secondary: #5e5c66;
+      --text-muted: #9a98a0;
+    }
+  }
+  
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Inter', sans-serif;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 24px 16px;
+  }
+  
+  .top {
+    width: 100%;
+    max-width: 720px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 20px;
+    gap: 12px;
+  }
+  
+  .top-actions {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  
+  .title {
+    font-family: 'Outfit', sans-serif;
+    font-weight: 800;
+    letter-spacing: -0.01em;
+    color: var(--text);
+    font-size: 1.25rem;
+  }
+  
+  .back {
+    color: var(--text-secondary);
+    text-decoration: none;
+    font-family: 'Outfit', sans-serif;
+    font-weight: 600;
+    font-size: 0.95rem;
+    transition: color 0.2s;
+  }
+  
+  .back:hover {
+    color: var(--accent);
+  }
+  
+  .wrap {
+    width: 100%;
+    max-width: 720px;
+    background: var(--panel);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    padding: 32px 28px;
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
+  }
+  
+  audio {
+    width: 100%;
+    border-radius: 8px;
+  }
+  
+  .stream-title {
+    font-size: 1.25rem;
+    color: var(--text);
+    font-family: 'Outfit', sans-serif;
+    font-weight: 800;
+    letter-spacing: -0.01em;
+    min-height: 1.4em;
+  }
+  
+  .diag {
+    padding: 16px;
+    border: 1px solid rgba(255, 59, 92, 0.25);
+    border-radius: 12px;
+    font-family: monospace;
+    font-size: 0.85rem;
+    line-height: 1.4;
+    white-space: pre-wrap;
+    color: var(--accent);
+    background: rgba(255, 59, 92, 0.05);
+    display: none;
+  }
+  
+  .status {
+    font-family: 'Outfit', sans-serif;
+    font-size: 0.85rem;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    color: var(--accent);
+    text-transform: uppercase;
+  }
+  
+  .seek-bar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+    padding-top: 16px;
+    border-top: 1px solid var(--border);
+  }
+  
+  .seek-btn {
+    background: var(--panel-solid);
+    border: 1px solid var(--border);
+    color: var(--text-secondary);
+    font-family: 'Outfit', sans-serif;
+    font-size: 0.9rem;
+    font-weight: 600;
+    padding: 8px 16px;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+  
+  .seek-btn:hover {
+    border-color: var(--accent);
+    color: var(--accent);
+  }
+  
+  .elapsed {
+    font-family: monospace;
+    font-size: 1rem;
+    color: var(--text);
+    margin-left: auto;
+    letter-spacing: .05em;
+  }
+  
+  .live-badge {
+    font-family: 'Outfit', sans-serif;
+    font-size: .75rem;
+    font-weight: 700;
+    letter-spacing: .05em;
+    color: #fff;
+    background: var(--accent);
+    padding: 4px 10px;
+    border-radius: 6px;
+    margin-left: auto;
+    display: none;
+    box-shadow: 0 0 10px var(--accent-glow);
+  }
+  
+  .seek-label {
+    font-family: 'Outfit', sans-serif;
+    font-size: 0.75rem;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    color: var(--text-muted);
+    text-transform: uppercase;
+  }
+  
+  .seek-pending {
+    font-family: monospace;
+    font-size: .85rem;
+    color: var(--accent);
+  }
+  
+  .seek-cancel {
+    background: none;
+    border: none;
+    color: var(--text-muted);
+    font-size: .85rem;
+    cursor: pointer;
+    text-decoration: underline;
+    padding: 0;
+  }
+  
+  .icon-btn {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    color: var(--text);
+    border-radius: 10px;
+    padding: 10px 14px;
+    font-size: 1.1rem;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s;
+  }
+  
+  .icon-btn:hover {
+    background: rgba(255, 255, 255, 0.08);
+    border-color: var(--text-secondary);
+  }
+  
+  .settings-panel {
+    display: none;
+    margin: 0 auto 16px;
+    width: 100%;
+    max-width: 720px;
+    background: var(--panel);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 24px;
+    gap: 16px;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
+  }
+  
+  .settings-panel.open {
+    display: flex;
+    flex-direction: column;
+  }
+  
+  .settings-grid {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+  
+  .settings-row {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+  
+  .settings-label-strong {
+    font-family: 'Outfit', sans-serif;
+    font-size: 0.75rem;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+  }
+  
+  .settings-apply {
+    align-self: flex-start;
+    background: var(--accent-gradient);
+    color: #fff;
+    border: 0;
+    border-radius: 10px;
+    padding: 12px 24px;
+    font-family: 'Outfit', sans-serif;
+    font-weight: 700;
+    font-size: 0.9rem;
+    letter-spacing: 0.05em;
+    cursor: pointer;
+    box-shadow: 0 4px 14px var(--accent-glow);
+    transition: transform 0.2s, box-shadow 0.2s;
+  }
+  
+  .settings-apply:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 6px 20px var(--accent-glow);
+  }
 </style>
 </head>
 <body>
@@ -2598,6 +3938,15 @@ AUDIO_WATCH_HTML = """<!DOCTYPE html>
   </div>
 <script>
 (function () {
+  var currentTheme = localStorage.getItem("theme") || (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+  if (currentTheme === "light") {
+    document.documentElement.classList.add("theme-light");
+    document.documentElement.classList.remove("theme-dark");
+  } else {
+    document.documentElement.classList.add("theme-dark");
+    document.documentElement.classList.remove("theme-light");
+  }
+
   var sid        = "{{stream_id}}";
   var syncMs     = "{{sync_ms}}";
   var videoUrl   = "{{video_url}}";
@@ -2626,7 +3975,7 @@ AUDIO_WATCH_HTML = """<!DOCTYPE html>
       btn.type = "button";
       btn.textContent = opt.label;
       btn.setAttribute("data-value", opt.value);
-      btn.style.cssText = "font-family:'Orbitron',monospace;font-size:.7rem;letter-spacing:.08em;padding:6px 12px;border-radius:6px;border:1px solid var(--border);background:transparent;color:var(--text);cursor:pointer;";
+      btn.style.cssText = "font-family:'Outfit',sans-serif;font-size:.8rem;font-weight:600;letter-spacing:.02em;padding:8px 16px;border-radius:8px;border:1px solid var(--border);background:transparent;color:var(--text-secondary);cursor:pointer;transition:all 0.2s;";
       btn.addEventListener("click", function () {
         state.value = opt.value;
         refresh();
@@ -2636,8 +3985,9 @@ AUDIO_WATCH_HTML = """<!DOCTYPE html>
     function refresh() {
       Array.prototype.forEach.call(container.querySelectorAll("button"), function (btn) {
         var active = btn.getAttribute("data-value") === state.value;
-        btn.style.background = active ? "var(--red)" : "transparent";
-        btn.style.color = active ? "#fff" : "var(--text)";
+        btn.style.background = active ? "var(--accent)" : "transparent";
+        btn.style.borderColor = active ? "var(--accent)" : "var(--border)";
+        btn.style.color = active ? "#fff" : "var(--text-secondary)";
       });
     }
     refresh();
@@ -2793,26 +4143,237 @@ MP4_WATCH_HTML = """<!DOCTYPE html>
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>OpenCarStream — MP4</title>
 <style>
-  @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@700;900&family=Rajdhani:wght@300;500&display=swap');
-  :root{--red:#e31937;--dark:#090909;--panel:#111117;--border:#252530;--text:#e0e0ee;}
-  @media(prefers-color-scheme:light){:root{--dark:#f4f4f6;--panel:#ffffff;--border:#d8d8e0;--text:#1a1a2e;}}
-  *{margin:0;padding:0;box-sizing:border-box;}
-  body{background:var(--dark);color:var(--text);font-family:'Rajdhani',sans-serif;min-height:100vh;display:flex;flex-direction:column;align-items:center;padding:16px;}
-  .top{width:100%;max-width:1280px;display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;gap:12px;}
-  .top-actions{display:flex;align-items:center;gap:10px;}
-  .title{font-family:'Orbitron',monospace;letter-spacing:.1em;color:var(--red);font-size:1rem;}
-  .back{color:var(--red);text-decoration:none;font-family:monospace;}
-  .wrap{width:100%;max-width:1280px;background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:10px;}
-  video{width:100%;height:auto;display:block;background:black;border-radius:8px;}
-  .stream-title{font-size:.95rem;color:var(--text);font-family:'Rajdhani',sans-serif;font-weight:500;padding:8px 4px 2px;letter-spacing:.02em;min-height:1.4em;}
-  .err{margin-top:10px;padding:12px 16px;background:#160d11;border:1px solid var(--red);border-radius:8px;font-family:monospace;font-size:.9rem;color:#f0b5bf;display:none;}
-  .icon-btn{background:var(--panel);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:8px 12px;font-family:'Orbitron',monospace;cursor:pointer;}
-  .settings-panel{display:none;margin:0 auto 12px;width:100%;max-width:1280px;background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:16px;gap:12px;}
-  .settings-panel.open{display:flex;flex-direction:column;}
-  .settings-grid{display:flex;flex-direction:column;gap:10px;}
-  .settings-row{display:flex;gap:6px;flex-wrap:wrap;}
-  .settings-label{font-family:'Orbitron',monospace;font-size:.7rem;letter-spacing:.1em;color:#888899;text-transform:uppercase;}
-  .settings-apply{align-self:flex-start;background:var(--red);color:#fff;border:0;border-radius:8px;padding:10px 16px;font-family:'Orbitron',monospace;letter-spacing:.08em;cursor:pointer;}
+  @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800;900&family=Inter:wght@400;500;600;700&display=swap');
+  
+  :root {
+    --bg: #09080c;
+    --panel: rgba(20, 19, 26, 0.7);
+    --panel-solid: #121118;
+    --border: rgba(255, 255, 255, 0.08);
+    --accent: #ff3b5c;
+    --accent-glow: rgba(255, 59, 92, 0.2);
+    --accent-gradient: linear-gradient(135deg, #ff3b5c 0%, #d61234 100%);
+    --text: #f4f3f6;
+    --text-secondary: #9e9ba7;
+    --text-muted: #5e5a66;
+    --red: var(--accent);
+  }
+  
+  :root.theme-light {
+    --bg: #f4f4f7;
+    --panel: rgba(255, 255, 255, 0.8);
+    --panel-solid: #ffffff;
+    --border: rgba(0, 0, 0, 0.08);
+    --accent: #ff3b5c;
+    --accent-glow: rgba(255, 59, 92, 0.15);
+    --accent-gradient: linear-gradient(135deg, #ff3b5c 0%, #e31937 100%);
+    --text: #1a191f;
+    --text-secondary: #5e5c66;
+    --text-muted: #9a98a0;
+  }
+
+  :root.theme-dark {
+    --bg: #09080c;
+    --panel: rgba(20, 19, 26, 0.7);
+    --panel-solid: #121118;
+    --border: rgba(255, 255, 255, 0.08);
+    --accent: #ff3b5c;
+    --accent-glow: rgba(255, 59, 92, 0.2);
+    --accent-gradient: linear-gradient(135deg, #ff3b5c 0%, #d61234 100%);
+    --text: #f4f3f6;
+    --text-secondary: #9e9ba7;
+    --text-muted: #5e5a66;
+  }
+  
+  @media(prefers-color-scheme:light) {
+    :root:not(.theme-dark) {
+      --bg: #f4f4f7;
+      --panel: rgba(255, 255, 255, 0.8);
+      --panel-solid: #ffffff;
+      --border: rgba(0, 0, 0, 0.08);
+      --accent: #ff3b5c;
+      --accent-glow: rgba(255, 59, 92, 0.15);
+      --accent-gradient: linear-gradient(135deg, #ff3b5c 0%, #e31937 100%);
+      --text: #1a191f;
+      --text-secondary: #5e5c66;
+      --text-muted: #9a98a0;
+    }
+  }
+  
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Inter', sans-serif;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 24px 16px;
+  }
+  
+  .top {
+    width: 100%;
+    max-width: 1280px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 16px;
+    gap: 12px;
+  }
+  
+  .top-actions {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  
+  .title {
+    font-family: 'Outfit', sans-serif;
+    font-weight: 800;
+    letter-spacing: -0.01em;
+    color: var(--text);
+    font-size: 1.25rem;
+  }
+  
+  .back {
+    color: var(--text-secondary);
+    text-decoration: none;
+    font-family: 'Outfit', sans-serif;
+    font-weight: 600;
+    font-size: 0.95rem;
+    transition: color 0.2s;
+  }
+  
+  .back:hover {
+    color: var(--accent);
+  }
+  
+  .wrap {
+    width: 100%;
+    max-width: 1280px;
+    background: var(--panel);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 16px;
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
+  }
+  
+  video {
+    width: 100%;
+    height: auto;
+    aspect-ratio: 16/9;
+    display: block;
+    background: black;
+    border-radius: 12px;
+    outline: none;
+  }
+  
+  .stream-title {
+    font-size: 1.1rem;
+    color: var(--text);
+    font-family: 'Outfit', sans-serif;
+    font-weight: 700;
+    padding: 16px 8px 8px;
+    letter-spacing: -0.01em;
+    min-height: 1.4em;
+  }
+  
+  .err {
+    margin-top: 16px;
+    padding: 16px 20px;
+    background: rgba(255, 59, 92, 0.1);
+    border: 1px solid rgba(255, 59, 92, 0.25);
+    border-radius: 12px;
+    font-family: 'Inter', sans-serif;
+    font-size: 0.95rem;
+    color: var(--accent);
+    display: none;
+  }
+  
+  .icon-btn {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    color: var(--text);
+    border-radius: 10px;
+    padding: 10px 14px;
+    font-size: 1.1rem;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s;
+  }
+  
+  .icon-btn:hover {
+    background: rgba(255, 255, 255, 0.08);
+    border-color: var(--text-secondary);
+  }
+  
+  .settings-panel {
+    display: none;
+    margin: 0 auto 16px;
+    width: 100%;
+    max-width: 1280px;
+    background: var(--panel);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 24px;
+    gap: 16px;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
+  }
+  
+  .settings-panel.open {
+    display: flex;
+    flex-direction: column;
+  }
+  
+  .settings-grid {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+  
+  .settings-row {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+  
+  .settings-label {
+    font-family: 'Outfit', sans-serif;
+    font-size: 0.75rem;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+  }
+  
+  .settings-apply {
+    align-self: flex-start;
+    background: var(--accent-gradient);
+    color: #fff;
+    border: 0;
+    border-radius: 10px;
+    padding: 12px 24px;
+    font-family: 'Outfit', sans-serif;
+    font-weight: 700;
+    font-size: 0.9rem;
+    letter-spacing: 0.05em;
+    cursor: pointer;
+    box-shadow: 0 4px 14px var(--accent-glow);
+    transition: transform 0.2s, box-shadow 0.2s;
+  }
+  
+  .settings-apply:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 6px 20px var(--accent-glow);
+  }
 </style>
 </head>
 <body>
@@ -2846,6 +4407,15 @@ MP4_WATCH_HTML = """<!DOCTYPE html>
   </div>
 <script>
 (function () {
+  var currentTheme = localStorage.getItem("theme") || (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+  if (currentTheme === "light") {
+    document.documentElement.classList.add("theme-light");
+    document.documentElement.classList.remove("theme-dark");
+  } else {
+    document.documentElement.classList.add("theme-dark");
+    document.documentElement.classList.remove("theme-light");
+  }
+
   var vid = document.getElementById("video");
   var errEl = document.getElementById("err");
   var settingsBtn = document.getElementById("settingsBtn");
@@ -2865,7 +4435,7 @@ MP4_WATCH_HTML = """<!DOCTYPE html>
       btn.type = "button";
       btn.textContent = opt.label;
       btn.setAttribute("data-value", opt.value);
-      btn.style.cssText = "font-family:'Orbitron',monospace;font-size:.7rem;letter-spacing:.08em;padding:6px 12px;border-radius:6px;border:1px solid var(--border);background:transparent;color:var(--text);cursor:pointer;";
+      btn.style.cssText = "font-family:'Outfit',sans-serif;font-size:.8rem;font-weight:600;letter-spacing:.02em;padding:8px 16px;border-radius:8px;border:1px solid var(--border);background:transparent;color:var(--text-secondary);cursor:pointer;transition:all 0.2s;";
       btn.addEventListener("click", function () {
         state.value = opt.value;
         refresh();
@@ -2875,8 +4445,9 @@ MP4_WATCH_HTML = """<!DOCTYPE html>
     function refresh() {
       Array.prototype.forEach.call(container.querySelectorAll("button"), function (btn) {
         var active = btn.getAttribute("data-value") === state.value;
-        btn.style.background = active ? "var(--red)" : "transparent";
-        btn.style.color = active ? "#fff" : "var(--text)";
+        btn.style.background = active ? "var(--accent)" : "transparent";
+        btn.style.borderColor = active ? "var(--accent)" : "var(--border)";
+        btn.style.color = active ? "#fff" : "var(--text-secondary)";
       });
     }
     refresh();
@@ -3009,41 +4580,351 @@ OGV_WATCH_HTML = """<!DOCTYPE html>
 <title>OpenCarStream - OGV</title>
 <script src="/ogv-dist/ogv.js"></script>
 <style>
-  :root{--red:#e31937;--dark:#050505;--panel:#101015;--text:#f1f1f4;--muted:#8e8e9a;--line:#2a2a34;}
-  *{box-sizing:border-box;margin:0;padding:0;}
-  body{background:var(--dark);color:var(--text);font-family:Arial,sans-serif;min-height:100vh;overflow:hidden;}
-  .stage{position:fixed;inset:0;background:#000;display:flex;align-items:center;justify-content:center;}
-  #player{width:100%;height:100%;display:block;background:#000;}
-  .top,.controls{position:fixed;left:0;right:0;z-index:10;transition:opacity .18s;}
-  .top{top:0;padding:14px 18px;background:linear-gradient(to bottom,rgba(0,0,0,.82),rgba(0,0,0,0));display:flex;align-items:center;justify-content:space-between;gap:14px;}
-  .top-left,.top-right{display:flex;align-items:center;gap:14px;}
-  .back{color:#fff;text-decoration:none;background:rgba(255,255,255,.14);border:1px solid rgba(255,255,255,.18);border-radius:7px;padding:10px 13px;font-size:16px;}
-  .title{font-weight:700;font-size:18px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-shadow:0 1px 2px #000;}
-  .center{position:fixed;inset:0;z-index:9;display:flex;align-items:center;justify-content:center;gap:28px;pointer-events:none;}
-  .bigbtn,.ctlbtn{border:0;color:#fff;background:rgba(255,255,255,.16);backdrop-filter:blur(8px);cursor:pointer;}
-  .bigbtn{width:76px;height:76px;border-radius:50%;font-size:28px;pointer-events:auto;}
-  .skip{width:60px;height:60px;border-radius:50%;font-size:16px;font-weight:700;}
-  .controls{bottom:0;padding:18px;background:linear-gradient(to top,rgba(0,0,0,.86),rgba(0,0,0,0));display:flex;align-items:center;gap:12px;}
-  .ctlbtn{min-width:48px;height:44px;border-radius:7px;font-size:16px;}
-  .time{font-family:monospace;font-size:16px;color:#fff;min-width:78px;text-align:center;}
-  .bar{position:relative;flex:1;height:28px;display:flex;align-items:center;}
-  .track{width:100%;height:6px;background:rgba(255,255,255,.22);border-radius:99px;overflow:hidden;}
-  .fill{height:100%;width:0;background:var(--red);}
-  .status{position:fixed;left:18px;bottom:78px;z-index:12;max-width:calc(100vw - 36px);padding:10px 12px;background:rgba(20,0,5,.9);border:1px solid rgba(227,25,55,.55);border-radius:7px;color:#ffd2d8;font-family:monospace;font-size:13px;white-space:pre-wrap;display:none;}
-  .icon-btn{min-width:48px;height:44px;border-radius:7px;border:0;color:#fff;background:rgba(255,255,255,.16);backdrop-filter:blur(8px);cursor:pointer;font-size:17px;}
-  .settings-panel{position:fixed;top:76px;right:18px;z-index:14;display:none;min-width:320px;max-width:min(420px,calc(100vw - 36px));padding:14px;background:rgba(10,10,16,.95);border:1px solid rgba(255,255,255,.15);border-radius:10px;box-shadow:0 18px 40px rgba(0,0,0,.45);}
-  .settings-panel.open{display:flex;flex-direction:column;gap:10px;}
-  .settings-label{font-family:Orbitron,monospace;font-size:11px;letter-spacing:.12em;color:var(--muted);text-transform:uppercase;}
-  .settings-row{display:flex;gap:6px;flex-wrap:wrap;}
-  .settings-chip{padding:6px 10px;border-radius:6px;border:1px solid rgba(255,255,255,.14);background:transparent;color:#fff;font-family:Orbitron,monospace;font-size:11px;letter-spacing:.08em;cursor:pointer;}
-  .settings-apply{margin-top:4px;padding:10px 12px;border-radius:8px;border:0;background:var(--red);color:#fff;font-family:Orbitron,monospace;letter-spacing:.08em;cursor:pointer;}
-  .loading-overlay{position:fixed;inset:0;z-index:11;display:none;align-items:center;justify-content:center;pointer-events:none;}
-  .loading-overlay.visible{display:flex;}
-  .loading-card{display:flex;flex-direction:column;align-items:center;gap:12px;padding:18px 22px;border-radius:14px;background:rgba(0,0,0,.72);border:1px solid rgba(255,255,255,.14);backdrop-filter:blur(10px);}
-  .spinner{width:38px;height:38px;border-radius:50%;border:3px solid rgba(255,255,255,.2);border-top-color:var(--red);animation:spin .9s linear infinite;}
-  .loading-text{font-family:Orbitron,monospace;font-size:12px;letter-spacing:.12em;text-transform:uppercase;color:#fff;text-align:center;}
-  @keyframes spin{to{transform:rotate(360deg);}}
-  .hidden-ui .top,.hidden-ui .controls,.hidden-ui .center{opacity:0;pointer-events:none;}
+  @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800;900&family=Inter:wght@400;500;600;700&display=swap');
+  
+  :root {
+    --bg: #09080c;
+    --panel: rgba(20, 19, 26, 0.75);
+    --panel-solid: #121118;
+    --border: rgba(255, 255, 255, 0.08);
+    --accent: #ff3b5c;
+    --accent-glow: rgba(255, 59, 92, 0.25);
+    --accent-gradient: linear-gradient(135deg, #ff3b5c 0%, #d61234 100%);
+    --text: #f4f3f6;
+    --text-secondary: #9e9ba7;
+    --text-muted: #5e5a66;
+    --red: var(--accent);
+  }
+  
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  
+  body {
+    background: #000;
+    color: var(--text);
+    font-family: 'Inter', sans-serif;
+    min-height: 100vh;
+    overflow: hidden;
+  }
+  
+  .stage {
+    position: fixed;
+    inset: 0;
+    background: #000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  
+  #player {
+    width: 100%;
+    height: 100%;
+    display: block;
+    background: #000;
+  }
+  
+  .top, .controls {
+    position: fixed;
+    left: 0;
+    right: 0;
+    z-index: 10;
+    transition: opacity .18s;
+  }
+  
+  .top {
+    top: 0;
+    padding: 18px 24px;
+    background: linear-gradient(to bottom, rgba(0,0,0,.85), rgba(0,0,0,0));
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 14px;
+  }
+  
+  .top-left, .top-right {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+  }
+  
+  .back {
+    color: var(--text-secondary);
+    text-decoration: none;
+    font-family: 'Outfit', sans-serif;
+    font-weight: 600;
+    font-size: 0.95rem;
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 8px 16px;
+    transition: all 0.2s;
+  }
+  
+  .back:hover {
+    background: rgba(255, 255, 255, 0.12);
+    color: #fff;
+    border-color: var(--text-secondary);
+  }
+  
+  .title {
+    font-family: 'Outfit', sans-serif;
+    font-weight: 800;
+    font-size: 1.25rem;
+    color: #fff;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    text-shadow: 0 2px 4px rgba(0,0,0,0.5);
+  }
+  
+  .center {
+    position: fixed;
+    inset: 0;
+    z-index: 9;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 28px;
+    pointer-events: none;
+  }
+  
+  .bigbtn, .ctlbtn, .icon-btn {
+    border: 1px solid var(--border);
+    color: #fff;
+    background: rgba(255, 255, 255, 0.08);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    cursor: pointer;
+    font-family: 'Outfit', sans-serif;
+    font-weight: 600;
+    transition: all 0.2s;
+  }
+  
+  .bigbtn:hover, .ctlbtn:hover, .icon-btn:hover {
+    background: rgba(255, 255, 255, 0.16);
+    border-color: rgba(255, 255, 255, 0.3);
+  }
+  
+  .bigbtn {
+    width: 80px;
+    height: 80px;
+    border-radius: 50%;
+    font-size: 1.5rem;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    pointer-events: auto;
+  }
+  
+  .skip {
+    width: 64px;
+    height: 64px;
+    font-size: 0.95rem;
+  }
+  
+  .controls {
+    bottom: 0;
+    padding: 24px;
+    background: linear-gradient(to top, rgba(0,0,0,.85), rgba(0,0,0,0));
+    display: flex;
+    align-items: center;
+    gap: 16px;
+  }
+  
+  .ctlbtn {
+    min-width: 64px;
+    height: 44px;
+    border-radius: 10px;
+    font-size: 0.95rem;
+  }
+  
+  .time {
+    font-family: monospace;
+    font-size: 1rem;
+    color: #fff;
+    min-width: 78px;
+    text-align: center;
+  }
+  
+  .bar {
+    position: relative;
+    flex: 1;
+    height: 28px;
+    display: flex;
+    align-items: center;
+    cursor: pointer;
+  }
+  
+  .track {
+    width: 100%;
+    height: 6px;
+    background: rgba(255, 255, 255, 0.16);
+    border-radius: 99px;
+    overflow: hidden;
+    position: relative;
+  }
+  
+  .fill {
+    height: 100%;
+    width: 0;
+    background: var(--accent-gradient);
+    box-shadow: 0 0 8px var(--accent-glow);
+  }
+  
+  .status {
+    position: fixed;
+    left: 24px;
+    bottom: 92px;
+    z-index: 12;
+    max-width: calc(100vw - 48px);
+    padding: 16px 20px;
+    background: rgba(20, 19, 26, 0.95);
+    border: 1px solid rgba(255, 59, 92, 0.3);
+    border-radius: 12px;
+    color: var(--accent);
+    font-family: monospace;
+    font-size: 0.9rem;
+    white-space: pre-wrap;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+    display: none;
+  }
+  
+  .icon-btn {
+    min-width: 44px;
+    height: 44px;
+    border-radius: 10px;
+    font-size: 1.1rem;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+  
+  .settings-panel {
+    position: fixed;
+    top: 86px;
+    right: 20px;
+    z-index: 14;
+    display: none;
+    min-width: 320px;
+    max-width: min(420px, calc(100vw - 36px));
+    padding: 24px;
+    background: var(--panel);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    box-shadow: 0 18px 40px rgba(0,0,0,.45);
+  }
+  
+  .settings-panel.open {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+  
+  .settings-label {
+    font-family: 'Outfit', sans-serif;
+    font-size: 0.75rem;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+  }
+  
+  .settings-row {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+  }
+  
+  .settings-chip {
+    padding: 8px 16px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    background: transparent;
+    color: var(--text-secondary);
+    font-family: 'Outfit', sans-serif;
+    font-size: 0.8rem;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+  
+  .settings-chip:hover {
+    border-color: var(--accent);
+    color: var(--accent);
+  }
+  
+  .settings-apply {
+    margin-top: 8px;
+    padding: 12px 20px;
+    border-radius: 10px;
+    border: 0;
+    background: var(--accent-gradient);
+    color: #fff;
+    font-family: 'Outfit', sans-serif;
+    font-weight: 700;
+    font-size: 0.9rem;
+    letter-spacing: 0.05em;
+    cursor: pointer;
+    box-shadow: 0 4px 14px var(--accent-glow);
+    transition: transform 0.2s, box-shadow 0.2s;
+  }
+  
+  .settings-apply:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 6px 20px var(--accent-glow);
+  }
+  
+  .loading-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 11;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    pointer-events: none;
+  }
+  
+  .loading-overlay.visible {
+    display: flex;
+  }
+  
+  .loading-card {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 16px;
+    padding: 24px 32px;
+    border-radius: 20px;
+    background: rgba(10, 9, 14, 0.85);
+    border: 1px solid var(--border);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.4);
+  }
+  
+  .spinner {
+    width: 44px;
+    height: 44px;
+    border-radius: 50%;
+    border: 3px solid rgba(255, 255, 255, 0.1);
+    border-top-color: var(--accent);
+    animation: spin .9s linear infinite;
+  }
+  
+  .loading-text {
+    font-family: 'Outfit', sans-serif;
+    font-weight: 700;
+    font-size: 0.9rem;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    color: #fff;
+    text-align: center;
+  }
+  
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .hidden-ui .top, .hidden-ui .controls, .hidden-ui .center { opacity: 0; pointer-events: none; }
 </style>
 </head>
 <body>
@@ -3281,7 +5162,9 @@ OGV_WATCH_HTML = """<!DOCTYPE html>
     function refresh() {
       Array.prototype.forEach.call(container.querySelectorAll("button"), function (btn) {
         var active = btn.getAttribute("data-value") === state.value;
-        btn.style.background = active ? "var(--red)" : "transparent";
+        btn.style.background = active ? "var(--accent)" : "transparent";
+        btn.style.borderColor = active ? "var(--accent)" : "var(--border)";
+        btn.style.color = active ? "#fff" : "var(--text-secondary)";
       });
     }
     refresh();
