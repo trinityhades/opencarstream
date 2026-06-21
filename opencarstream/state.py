@@ -24,6 +24,8 @@ class Stream:
         self.fps        : float = float(MJPEG_FPS)
         self.started_at : float | None = None
         self.first_frame_at: float | None = None
+        self.active_clients = 0
+        self.last_client_at = time.time()
         # Audio ring-buffer for direct streams (HLS/MPEG-TS) where a second
         # connection to the source is not viable.
         self._audio_lock   = threading.Lock()
@@ -56,6 +58,29 @@ class Stream:
             self.frame_cond.notify_all()
         with self.lock:
             self._frame_history.clear()
+            self.active_clients = 0
+
+    def add_client(self):
+        with self.lock:
+            self.active_clients += 1
+            now = time.time()
+            self.last_client_at = now
+            self.last_used = now
+
+    def remove_client(self):
+        with self.lock:
+            if self.active_clients > 0:
+                self.active_clients -= 1
+            now = time.time()
+            self.last_client_at = now
+            self.last_used = now
+
+    def touch(self):
+        with self.lock:
+            now = time.time()
+            self.last_used = now
+            if self.active_clients > 0:
+                self.last_client_at = now
 
     def to_dict(self):
         return {
@@ -70,6 +95,7 @@ class Stream:
             "age_s":  round(time.time() - self.created_at),
             "fps":    self.fps,
             "seek_s": self.seek_s,
+            "clients": self.active_clients,
         }
 
 
@@ -78,6 +104,7 @@ class Registry:
     def __init__(self):
         self._lock    = threading.Lock()
         self._streams : dict[str, Stream] = {}
+        self._viewer_streams: dict[str, str] = {}
         self._counter = 0
 
     def _make_id(self) -> str:
@@ -114,6 +141,51 @@ class Registry:
             self._streams[sid] = stream
             return stream
 
+    def bind_viewer(self, viewer_id: str | None, stream: Stream | None):
+        if not viewer_id:
+            return
+        old_stream = None
+        with self._lock:
+            old_sid = self._viewer_streams.get(viewer_id)
+            new_sid = stream.id if stream is not None else None
+            if old_sid and old_sid != new_sid:
+                old_stream = self._streams.get(old_sid)
+            if stream is None:
+                self._viewer_streams.pop(viewer_id, None)
+            else:
+                self._viewer_streams[viewer_id] = stream.id
+                stream.last_used = time.time()
+        if old_stream is not None:
+            log.info(f"Replacing viewer stream {old_stream.id} for viewer={viewer_id[:12]}")
+            old_stream.stop()
+            with self._lock:
+                if self._streams.get(old_stream.id) is old_stream:
+                    old_stream.status = "done"
+                    del self._streams[old_stream.id]
+
+    def touch_stream(self, stream: Stream):
+        stream.touch()
+
+    def release_stream_if_inactive(self, stream: Stream, idle_timeout_s: int = STREAM_IDLE_TIMEOUT_S):
+        if stream.active_clients > 0:
+            return
+        now = time.time()
+        if now - stream.last_client_at < idle_timeout_s:
+            return
+        with self._lock:
+            current = self._streams.get(stream.id)
+            if current is not stream:
+                return
+            if stream.active_clients > 0 or now - stream.last_client_at < idle_timeout_s:
+                return
+            viewer_ids = [vid for vid, sid in self._viewer_streams.items() if sid == stream.id]
+            for vid in viewer_ids:
+                self._viewer_streams.pop(vid, None)
+            log.info(f"Auto-stopping inactive stream {stream.id}")
+            stream.stop()
+            stream.status = "done"
+            del self._streams[stream.id]
+
     def get(self, sid: str) -> Stream | None:
         with self._lock:
             return self._streams.get(sid)
@@ -128,6 +200,9 @@ class Registry:
                     if s.status in ("error", "done")
                     and time.time() - s.last_used > 60]
             for sid in dead:
+                for viewer_id, mapped_sid in list(self._viewer_streams.items()):
+                    if mapped_sid == sid:
+                        del self._viewer_streams[viewer_id]
                 self._streams[sid].stop()
                 del self._streams[sid]
                 log.info(f"Cleaned up stream {sid}")
@@ -142,7 +217,24 @@ class Registry:
                 log.info(f"Auto-stopping stream {sid} (age limit reached)")
                 self._streams[sid].stop()
                 self._streams[sid].status = "done"
+                for viewer_id, mapped_sid in list(self._viewer_streams.items()):
+                    if mapped_sid == sid:
+                        del self._viewer_streams[viewer_id]
                 del self._streams[sid]
+
+    def cleanup_inactive(self, idle_timeout_s: int = STREAM_IDLE_TIMEOUT_S):
+        stale: list[Stream] = []
+        now = time.time()
+        with self._lock:
+            for stream in self._streams.values():
+                if stream.status not in ("starting", "streaming"):
+                    continue
+                if stream.active_clients > 0:
+                    continue
+                if now - stream.last_client_at >= idle_timeout_s:
+                    stale.append(stream)
+        for stream in stale:
+            self.release_stream_if_inactive(stream, idle_timeout_s=idle_timeout_s)
 
 
 registry = Registry()

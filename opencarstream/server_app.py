@@ -33,7 +33,8 @@ def main():
 
     def _stream_reaper():
         while True:
-            time.sleep(60)
+            time.sleep(10)
+            registry.cleanup_inactive()
             registry.cleanup_old()
     threading.Thread(target=_stream_reaper, daemon=True).start()
 

@@ -300,8 +300,8 @@ STATUS_HTML = """<!DOCTYPE html>
 <p class="sub">A third-party streaming launcher for Tesla’s in-car browser</p>
 
 <div class="tabs">
-  <button class="tab-btn active" data-tab="stream">Stream</button>
-  <button class="tab-btn" data-tab="feed">YouTube</button>
+  <button class="tab-btn" data-tab="stream">Stream</button>
+  <button class="tab-btn active" data-tab="feed">YouTube</button>
   <button class="tab-btn" data-tab="twitch">Twitch</button>
   <button class="tab-btn" data-tab="pluto">Pluto TV</button>
   <button class="tab-btn" data-tab="iptv">IPTV</button>
@@ -311,7 +311,7 @@ STATUS_HTML = """<!DOCTYPE html>
 </div>
 
 <!-- ── Stream tab ── -->
-<div class="tab-panel active" id="tab-stream">
+<div class="tab-panel" id="tab-stream">
   <div class="card">
     <h2>Start stream</h2>
     <p style="font-size:.85rem;color:var(--muted);margin-bottom:12px;">
@@ -357,7 +357,7 @@ STATUS_HTML = """<!DOCTYPE html>
 </div>
 
 <!-- ── Feed tab ── -->
-<div class="tab-panel" id="tab-feed">
+<div class="tab-panel active" id="tab-feed">
   <details class="card playback-card">
     <summary>Playback options</summary>
     <div class="playback-inner" style="display:flex;flex-direction:column;gap:10px;">
@@ -463,14 +463,14 @@ STATUS_HTML = """<!DOCTYPE html>
       <div id="pluto-mode-btns" style="display:flex;gap:6px;flex-wrap:wrap;"></div>
       <div id="pluto-profile-btns" style="display:flex;gap:6px;flex-wrap:wrap;"></div>
       <div id="pluto-sync-btns" style="display:flex;gap:6px;flex-wrap:wrap;"></div>
-      <input id="pluto-filter" type="text" placeholder="Filter channels…"
-             style="background:var(--input-bg);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:8px 12px;font-family:monospace;">
     </div>
   </details>
   <div class="card">
     <h2>Channels</h2>
     <div id="pluto-lang-btns" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px;"></div>
     <div class="feed-status" id="pluto-status">Open this tab to load channels.</div>
+    <input id="pluto-filter" type="text" placeholder="Filter channels…"
+             style="background:var(--input-bg);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:8px 12px;font-family:monospace;">
     <div id="pluto-list" style="max-height:520px;overflow-y:auto;border:1px solid var(--border);border-radius:8px;padding:0 10px 10px;"></div>
   </div>
 </div>
@@ -683,6 +683,23 @@ STATUS_HTML = """<!DOCTYPE html>
   function escHtml(s) {
     return (s || "").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
   }
+  function viewerToken() {
+    try {
+      var key = "ocs_viewer_id";
+      var existing = sessionStorage.getItem(key);
+      if (existing) return existing;
+      var token = "v-" + Math.random().toString(36).slice(2) + Date.now().toString(36);
+      sessionStorage.setItem(key, token);
+      return token;
+    } catch (e) {
+      return "";
+    }
+  }
+  function withViewerParam(target) {
+    var token = viewerToken();
+    if (!token) return target;
+    return target + (target.indexOf("?") === -1 ? "?" : "&") + "viewer=" + encodeURIComponent(token);
+  }
 
   // ── Button group helper ──
   function createButtonGroup(containerId, options, defaultValue) {
@@ -722,8 +739,8 @@ STATUS_HTML = """<!DOCTYPE html>
   // ── Mode button options (shared across tabs) ──
   var modeOptions = [
     { value: "ogv",    label: "OGV (Tesla)" },
+    { value: "mjpeg",  label: "MJPEG (Tesla)" },
     { value: "mp4",    label: "MP4 (smooth)" },
-    { value: "mjpeg",  label: "MJPEG fallback" },
     { value: "audio",  label: "Audio only" }
   ];
   var isTesla = isTeslaUserAgent(navigator.userAgent);
@@ -793,7 +810,7 @@ STATUS_HTML = """<!DOCTYPE html>
     if (mode) target += "&mode=" + encodeURIComponent(mode);
     if (resolvedProfile && mode !== "audio") target += "&profile=" + encodeURIComponent(resolvedProfile);
     if (quality === "auto" || profile === "auto") target += "&auto=1";
-    return target;
+    return withViewerParam(target);
   }
 
   function resolveInputUrl(raw) {
@@ -971,7 +988,7 @@ STATUS_HTML = """<!DOCTYPE html>
             "&sync=" + encodeURIComponent(plutoSync.value);
           if (plutoMode.value) plutoWatchUrl += "&mode=" + encodeURIComponent(plutoMode.value);
           if (plutoProfile.value) plutoWatchUrl += "&profile=" + encodeURIComponent(plutoProfile.value === "auto" ? autoQualityForNetwork(plutoMode.value) : plutoProfile.value);
-          window.location.href = plutoWatchUrl;
+          window.location.href = withViewerParam(plutoWatchUrl);
           return;
         }
         window.location.href = buildWatchUrl(ch.url, "auto", plutoSync.value, plutoMode.value, plutoProfile.value);
@@ -1969,7 +1986,7 @@ STATUS_HTML = """<!DOCTYPE html>
           "&sync=" + encodeURIComponent(localSync.value);
         if (localMode.value) localUrl += "&mode=" + encodeURIComponent(localMode.value);
         if (localProfile.value) localUrl += "&profile=" + encodeURIComponent(localProfile.value);
-        window.location.href = localUrl;
+        window.location.href = withViewerParam(localUrl);
       });
       localList.appendChild(row);
     });
@@ -2002,6 +2019,9 @@ STATUS_HTML = """<!DOCTYPE html>
     if (localOpened) return;
     localOpened = true;
     loadLocalDir("");
+  });
+  Array.prototype.forEach.call(document.querySelectorAll('a[href^="/watch?"], a[href^="/local_watch?"], a[href^="/pluto_watch?"]'), function (link) {
+    link.href = withViewerParam(link.getAttribute("href"));
   });
   } catch(e) { /* init error — non-fatal */ }
 })();

@@ -72,6 +72,7 @@ OGV_VIDEO_QUALITY = int(os.environ.get("OGV_VIDEO_QUALITY", "5"))
 OGV_AUDIO_BITRATE = os.environ.get("OGV_AUDIO_BITRATE", "96k")
 OGV_DEFAULT_PROFILE = os.environ.get("OGV_DEFAULT_PROFILE", "auto").strip().lower()
 MAX_STREAMS   = int(os.environ.get("MAX_STREAMS", "3"))       # concurrent stream slots
+STREAM_IDLE_TIMEOUT_S = int(os.environ.get("STREAM_IDLE_TIMEOUT_S", "20"))
 AUDIO_DELAY_MS= int(os.environ.get("AUDIO_DELAY_MS", "0"))   # ms to delay video start after audio, to keep streams in sync
 LOCAL_MEDIA_VIDEO_DELAY_MS = int(
     os.environ.get("LOCAL_MEDIA_VIDEO_DELAY_MS", "1500")

@@ -93,6 +93,10 @@ class Handler(BaseHTTPRequestHandler):
         return sync_ms
 
     @staticmethod
+    def _parse_viewer_id(qs: dict[str, list[str]]) -> str:
+        return (qs.get("viewer", [""])[0] or "").strip()[:128]
+
+    @staticmethod
     def _resolve_local_media_path(rel_path: str | None) -> tuple[str | None, str]:
         if not rel_path:
             return None, "Missing ?file= parameter"
@@ -334,6 +338,7 @@ class Handler(BaseHTTPRequestHandler):
 
         elif path == "/local_watch":
             raw_file = qs.get("file", [None])[0]
+            viewer_id = self._parse_viewer_id(qs)
             raw_sync = qs.get("sync", [None])[0]
             raw_seek = qs.get("seek", [None])[0]
             if raw_sync is None or raw_sync == "":
@@ -355,16 +360,6 @@ class Handler(BaseHTTPRequestHandler):
                 self._error(400, err)
                 return
             file_url = "file://" + quote(local_file, safe="/")
-            registry.cleanup_done()
-            stream = registry.get_or_create(
-                file_url,
-                quality=None,
-                reuse_existing=False,
-            )
-            if not stream.title:
-                stream.title = os.path.splitext(os.path.basename(local_file))[0]
-            if seek_s > 0:
-                stream.seek_s = float(seek_s)
             user_agent = self.headers.get("User-Agent", "")
             default_mode = "ogv" if _is_tesla_user_agent(user_agent) else "mp4"
             local_mode = (qs.get("mode", [default_mode])[0] or default_mode).lower()
@@ -376,7 +371,20 @@ class Handler(BaseHTTPRequestHandler):
                 self._error(400, str(e))
                 return
 
+            registry.bind_viewer(viewer_id, None)
+            registry.cleanup_done()
+            stream = registry.get_or_create(
+                file_url,
+                quality=None,
+                reuse_existing=False,
+            )
+            if not stream.title:
+                stream.title = os.path.splitext(os.path.basename(local_file))[0]
+            if seek_s > 0:
+                stream.seek_s = float(seek_s)
+
             if local_mode == "mp4":
+                registry.release_stream_if_inactive(stream, idle_timeout_s=0)
                 vcodec, acodec = _probe_local_codecs(local_file)
                 fname = os.path.basename(local_file)
                 # Browsers support H.264/H.265 video and AAC/MP3 audio natively in MP4
@@ -394,12 +402,14 @@ class Handler(BaseHTTPRequestHandler):
                 return
 
             if local_mode == "ogv":
+                registry.release_stream_if_inactive(stream, idle_timeout_s=0)
                 ogv_url = "/stream_ogv?url=" + quote(file_url, safe="") + f"&seek={int(seek_s)}&profile=" + quote(profile, safe="")
                 self._html(render_ogv_page(ogv_url, original_url=file_url, stream_title=stream.title, seek_s=int(seek_s), profile=profile))
                 return
 
             if local_mode == "audio":
                 stream.audio_only = True
+                registry.bind_viewer(viewer_id, stream)
                 self._html(render_audio_page(stream.id, sync_ms))
                 return
 
@@ -414,6 +424,7 @@ class Handler(BaseHTTPRequestHandler):
                 and time.time() < warm_deadline
             ):
                 time.sleep(0.05)
+            registry.bind_viewer(viewer_id, stream)
             self._html(render_watch_page(stream.id, sync_ms, local_file=raw_file or "", seek_s=seek_s))
 
         elif path == "/pluto_channels":
@@ -423,6 +434,7 @@ class Handler(BaseHTTPRequestHandler):
         elif path == "/pluto_watch":
             lang = (qs.get("lang", [PLUTO_LANGS[0]])[0] or "").strip().lower()
             channel_id = qs.get("id", [None])[0]
+            viewer_id = self._parse_viewer_id(qs)
             if not channel_id:
                 self._error(400, "Missing ?id= parameter")
                 return
@@ -444,6 +456,17 @@ class Handler(BaseHTTPRequestHandler):
             if not pluto_url:
                 self._error(502, f"Pluto TV stream unavailable: {err}")
                 return
+            user_agent = self.headers.get("User-Agent", "")
+            default_mode = "ogv" if _is_tesla_user_agent(user_agent) else "mp4"
+            pluto_mode = (qs.get("mode", [default_mode])[0] or default_mode).lower()
+            if pluto_mode not in ("mjpeg", "mp4", "ogv", "audio"):
+                pluto_mode = default_mode
+            try:
+                profile = self._parse_profile(qs.get("profile", [None])[0])
+            except ValueError as e:
+                self._error(400, str(e))
+                return
+            registry.bind_viewer(viewer_id, None)
             registry.cleanup_done()
             stream = registry.get_or_create(
                 pluto_url,
@@ -455,26 +478,21 @@ class Handler(BaseHTTPRequestHandler):
                     ch = next((c for c in pluto_cache._by_lang.get(lang, []) if c.get("id") == channel_id), None)
                 if ch:
                     stream.title = ch["name"]
-            user_agent = self.headers.get("User-Agent", "")
-            default_mode = "ogv" if _is_tesla_user_agent(user_agent) else "mp4"
-            pluto_mode = (qs.get("mode", [default_mode])[0] or default_mode).lower()
-            if pluto_mode not in ("mjpeg", "mp4", "ogv", "audio"):
-                pluto_mode = default_mode
-            try:
-                profile = self._parse_profile(qs.get("profile", [None])[0])
-            except ValueError as e:
-                self._error(400, str(e))
-                return
             if pluto_mode == "mp4":
+                registry.release_stream_if_inactive(stream, idle_timeout_s=0)
                 direct_url, err = _resolve_mp4_url(pluto_url, None, profile=profile)
                 self._html(render_mp4_page(direct_url, error_msg=err, stream_title=stream.title))
             elif pluto_mode == "ogv":
+                registry.bind_viewer(viewer_id, None)
+                registry.release_stream_if_inactive(stream, idle_timeout_s=0)
                 ogv_url = "/stream_ogv?url=" + quote(pluto_url, safe="") + "&profile=" + quote(profile, safe="")
                 self._html(render_ogv_page(ogv_url, original_url=pluto_url, stream_title=stream.title, profile=profile))
             elif pluto_mode == "audio":
                 stream.audio_only = True
+                registry.bind_viewer(viewer_id, stream)
                 self._html(render_audio_page(stream.id, sync_ms))
             else:
+                registry.bind_viewer(viewer_id, stream)
                 self._html(render_watch_page(stream.id, sync_ms))
 
         elif path == "/stop_stream":
@@ -486,6 +504,7 @@ class Handler(BaseHTTPRequestHandler):
             if stream:
                 stream.stop()
                 stream.status = "done"
+                registry.release_stream_if_inactive(stream, idle_timeout_s=0)
             self._json({"ok": True})
 
         elif path == "/stream_status":
@@ -501,6 +520,7 @@ class Handler(BaseHTTPRequestHandler):
 
         elif path == "/watch":
             raw_url = qs.get("url", [None])[0]
+            viewer_id = self._parse_viewer_id(qs)
             if not raw_url:
                 self._error(400, "Missing ?url= parameter")
                 return
@@ -529,6 +549,7 @@ class Handler(BaseHTTPRequestHandler):
                 return
 
             if mode == "mp4":
+                registry.bind_viewer(viewer_id, None)
                 direct_url, err = _resolve_mp4_url(video_url, quality, profile=profile)
                 self._html(render_mp4_page(direct_url, error_msg=err))
                 return
@@ -539,6 +560,7 @@ class Handler(BaseHTTPRequestHandler):
                 seek_s = 0.0
 
             if mode == "ogv":
+                registry.bind_viewer(viewer_id, None)
                 ogv_url = "/stream_ogv?url=" + quote(video_url, safe="") + f"&seek={int(seek_s)}"
                 if quality:
                     ogv_url += f"&quality={quality}"
@@ -553,6 +575,7 @@ class Handler(BaseHTTPRequestHandler):
                 ))
                 return
 
+            registry.bind_viewer(viewer_id, None)
             registry.cleanup_done()
             stream = registry.get_or_create(
                 video_url,
@@ -563,8 +586,10 @@ class Handler(BaseHTTPRequestHandler):
             if mode == "audio":
                 stream.audio_only = True
                 duration_s = _fetch_duration_s(video_url)
+                registry.bind_viewer(viewer_id, stream)
                 self._html(render_audio_page(stream.id, sync_ms, video_url, int(seek_s), duration_s))
             else:
+                registry.bind_viewer(viewer_id, stream)
                 self._html(render_watch_page(stream.id, sync_ms, video_url, quality))
 
         elif path == "/stream":
@@ -1575,6 +1600,7 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("X-Stream-Id",   stream.id)
         self.send_header("X-Stream-Title", self._safe_header_value(stream.title or ""))
         self.end_headers()
+        stream.add_client()
 
         log.info(f"[{stream.id}] Client connected: {self.client_address[0]}")
         last_frame = None
@@ -1603,12 +1629,16 @@ class Handler(BaseHTTPRequestHandler):
                         b"Content-Length: " + str(len(frame)).encode() + b"\r\n\r\n"
                     )
                     self.wfile.write(boundary + frame + b"\r\n")
+                    stream.touch()
 
                 if status in ("error", "done"):
                     break
 
         except (BrokenPipeError, ConnectionResetError):
             log.info(f"[{stream.id}] Client disconnected: {self.client_address[0]}")
+        finally:
+            stream.remove_client()
+            registry.release_stream_if_inactive(stream)
 
     @staticmethod
     def _launch_audio_pipeline(url: str, seek_s: float):
@@ -1670,6 +1700,7 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_header("Cache-Control", "no-cache, no-store")
                 self.send_header("Connection", "keep-alive")
                 self.end_headers()
+                stream.add_client()
                 cursor = 0
                 sent_bytes = 0
                 while True:
@@ -1682,12 +1713,16 @@ class Handler(BaseHTTPRequestHandler):
                     for ch in new_chunks:
                         self.wfile.write(ch)
                         sent_bytes += len(ch)
+                        stream.touch()
                     self.wfile.flush()
                     if done and not new_chunks:
                         break
                 log.info(f"[{stream.id}] Audio-only stream ended (bytes={sent_bytes})")
             except (BrokenPipeError, ConnectionResetError):
                 pass
+            finally:
+                stream.remove_client()
+                registry.release_stream_if_inactive(stream)
             return
 
         if _is_direct_stream(stream.url):
@@ -1702,6 +1737,7 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_header("Cache-Control", "no-cache, no-store")
                 self.send_header("Connection", "keep-alive")
                 self.end_headers()
+                stream.add_client()
 
                 cursor = 0
                 sent_bytes = 0
@@ -1715,12 +1751,16 @@ class Handler(BaseHTTPRequestHandler):
                     for ch in new_chunks:
                         self.wfile.write(ch)
                         sent_bytes += len(ch)
+                        stream.touch()
                     self.wfile.flush()
                     if done and not new_chunks:
                         break
                 log.info(f"[{stream.id}] Direct audio ended (bytes={sent_bytes})")
             except (BrokenPipeError, ConnectionResetError):
                 pass
+            finally:
+                stream.remove_client()
+                registry.release_stream_if_inactive(stream)
             return
 
         # MJPEG mode, non-direct (YouTube/Twitch): independent audio pipeline
@@ -1734,6 +1774,7 @@ class Handler(BaseHTTPRequestHandler):
             self.send_header("Cache-Control", "no-cache, no-store")
             self.send_header("Connection", "keep-alive")
             self.end_headers()
+            stream.add_client()
 
             while True:
                 chunk = ff_proc.stdout.read(16384)
@@ -1741,9 +1782,12 @@ class Handler(BaseHTTPRequestHandler):
                     break
                 self.wfile.write(chunk)
                 self.wfile.flush()
+                stream.touch()
         except (BrokenPipeError, ConnectionResetError):
             pass
         finally:
+            stream.remove_client()
+            registry.release_stream_if_inactive(stream)
             for proc in (ff_proc, yt_proc):
                 if proc:
                     try:
@@ -1776,4 +1820,3 @@ class ThreadedHTTPServer(ThreadingMixIn, HTTPServer):
     """Each request handled in its own thread (needed for concurrent MJPEG streams)."""
     daemon_threads = True
     allow_reuse_address = True
-
