@@ -18,6 +18,34 @@ from .state import Stream, active_sessions, registry, sessions_lock
 from .storage import *
 from .views import *
 
+
+def _is_tesla_user_agent(user_agent: str | None) -> bool:
+    ua = (user_agent or "").lower()
+    if not ua:
+        return False
+    if "tesla" in ua or "qtcarbrowser" in ua or "qtwebengine" in ua:
+        return True
+
+    # Newer Tesla browser builds often present as a plain Linux Chromium UA
+    # without an explicit Tesla token.
+    if (
+        "x11; linux x86_64" in ua
+        and "applewebkit/" in ua
+        and "chrome/" in ua
+        and "safari/" in ua
+        and "edg/" not in ua
+        and "opr/" not in ua
+        and "opera" not in ua
+        and "vivaldi" not in ua
+        and "brave" not in ua
+        and "chromium" not in ua
+        and "firefox/" not in ua
+    ):
+        return True
+
+    return False
+
+
 class Handler(BaseHTTPRequestHandler):
     disable_nagle_algorithm = True  # TCP_NODELAY — eliminates inter-frame buffering delay
 
@@ -338,7 +366,7 @@ class Handler(BaseHTTPRequestHandler):
             if seek_s > 0:
                 stream.seek_s = float(seek_s)
             user_agent = self.headers.get("User-Agent", "")
-            default_mode = "ogv" if "tesla" in user_agent.lower() else "mp4"
+            default_mode = "ogv" if _is_tesla_user_agent(user_agent) else "mp4"
             local_mode = (qs.get("mode", [default_mode])[0] or default_mode).lower()
             if local_mode not in ("mjpeg", "mp4", "ogv", "audio"):
                 local_mode = default_mode
@@ -428,7 +456,7 @@ class Handler(BaseHTTPRequestHandler):
                 if ch:
                     stream.title = ch["name"]
             user_agent = self.headers.get("User-Agent", "")
-            default_mode = "ogv" if "tesla" in user_agent.lower() else "mp4"
+            default_mode = "ogv" if _is_tesla_user_agent(user_agent) else "mp4"
             pluto_mode = (qs.get("mode", [default_mode])[0] or default_mode).lower()
             if pluto_mode not in ("mjpeg", "mp4", "ogv", "audio"):
                 pluto_mode = default_mode
@@ -490,7 +518,7 @@ class Handler(BaseHTTPRequestHandler):
                 self._error(400, str(e))
                 return
             user_agent = self.headers.get("User-Agent", "")
-            default_mode = "ogv" if "tesla" in user_agent.lower() else "mp4"
+            default_mode = "ogv" if _is_tesla_user_agent(user_agent) else "mp4"
             mode = (qs.get("mode", [default_mode])[0] or default_mode).lower()
             if mode not in ("mjpeg", "mp4", "ogv", "audio"):
                 mode = default_mode
@@ -1748,5 +1776,4 @@ class ThreadedHTTPServer(ThreadingMixIn, HTTPServer):
     """Each request handled in its own thread (needed for concurrent MJPEG streams)."""
     daemon_threads = True
     allow_reuse_address = True
-
 

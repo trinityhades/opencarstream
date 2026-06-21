@@ -611,8 +611,27 @@ STATUS_HTML = """<!DOCTYPE html>
 </script>
 <script>
 (function () {
+  function isTeslaUserAgent(userAgent) {
+    var ua = (userAgent || "").toLowerCase();
+    if (!ua) return false;
+    if (ua.indexOf("tesla") !== -1 || ua.indexOf("qtcarbrowser") !== -1 || ua.indexOf("qtwebengine") !== -1) {
+      return true;
+    }
+    return ua.indexOf("x11; linux x86_64") !== -1 &&
+      ua.indexOf("applewebkit/") !== -1 &&
+      ua.indexOf("chrome/") !== -1 &&
+      ua.indexOf("safari/") !== -1 &&
+      ua.indexOf("edg/") === -1 &&
+      ua.indexOf("opr/") === -1 &&
+      ua.indexOf("opera") === -1 &&
+      ua.indexOf("vivaldi") === -1 &&
+      ua.indexOf("brave") === -1 &&
+      ua.indexOf("chromium") === -1 &&
+      ua.indexOf("firefox/") === -1;
+  }
+
   // ── Safety Warning Modal for Tesla ──
-  var isTesla = /tesla/i.test(navigator.userAgent);
+  var isTesla = isTeslaUserAgent(navigator.userAgent);
   var safetyAccepted = sessionStorage.getItem("safetyAccepted") === "true";
   if (isTesla && !safetyAccepted) {
     var modal = document.getElementById("safety-modal");
@@ -700,7 +719,7 @@ STATUS_HTML = """<!DOCTYPE html>
     { value: "mjpeg",  label: "MJPEG fallback" },
     { value: "audio",  label: "Audio only" }
   ];
-  var isTesla = /tesla/i.test(navigator.userAgent);
+  var isTesla = isTeslaUserAgent(navigator.userAgent);
   var defaultMode = isTesla ? "ogv" : "mp4";
   var qualityOptions = [
     { value: "auto", label: "SRC AUTO" },
@@ -3146,4 +3165,3 @@ def render_ogv_page(
             .replace("{{video_quality_json}}", json.dumps(str(quality or "")))
             .replace("{{profile_json}}", json.dumps(profile or ""))
             .replace("{{seek_s}}", str(seek_s)))
-
