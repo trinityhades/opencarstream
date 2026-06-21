@@ -221,6 +221,12 @@ STATUS_HTML = """<!DOCTYPE html>
   .feed-info{padding:10px 13px;}
   .feed-title{font-size:.9rem;line-height:1.35;color:var(--text);margin-bottom:5px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;}
   .feed-dur{font-family:monospace;font-size:.78rem;color:var(--muted);}
+  .playback-card{padding:0;overflow:hidden;}
+  .playback-card summary{list-style:none;display:flex;align-items:center;justify-content:space-between;gap:16px;padding:22px 28px;cursor:pointer;font-family:'Orbitron',monospace;font-size:.95rem;letter-spacing:.15em;color:var(--muted);text-transform:uppercase;}
+  .playback-card summary::-webkit-details-marker{display:none;}
+  .playback-card summary::after{content:"+";font-size:1.2rem;color:var(--red);line-height:1;}
+  .playback-card[open] summary::after{content:"−";}
+  .playback-inner{padding:0 28px 24px;}
   /* shared input style for start-stream row */
   #yt-id{flex:1;min-width:300px;background:var(--input-bg);color:var(--text);border:1px solid var(--border);border-radius:8px;padding:12px 16px;font-family:monospace;font-size:1rem;}
   select{background:var(--input-bg);color:var(--text);border:1px solid var(--border);border-radius:8px;padding:12px 16px;font-family:monospace;font-size:1rem;}
@@ -352,15 +358,15 @@ STATUS_HTML = """<!DOCTYPE html>
 
 <!-- ── Feed tab ── -->
 <div class="tab-panel" id="tab-feed">
-  <div class="card">
-    <h2>Playback options</h2>
-    <div style="display:flex;flex-direction:column;gap:10px;">
+  <details class="card playback-card">
+    <summary>Playback options</summary>
+    <div class="playback-inner" style="display:flex;flex-direction:column;gap:10px;">
       <div id="feed-mode-btns" style="display:flex;gap:6px;flex-wrap:wrap;"></div>
       <div id="feed-quality-btns" style="display:flex;gap:6px;flex-wrap:wrap;"></div>
       <div id="feed-profile-btns" style="display:flex;gap:6px;flex-wrap:wrap;"></div>
       <div id="feed-sync-btns" style="display:flex;gap:6px;flex-wrap:wrap;"></div>
     </div>
-  </div>
+  </details>
 
   <!-- Home feed panel -->
   <div class="card" id="home-card" style="display:none;">
@@ -419,15 +425,15 @@ STATUS_HTML = """<!DOCTYPE html>
 
 <!-- ── Twitch tab ── -->
 <div class="tab-panel" id="tab-twitch">
-  <div class="card">
-    <h2>Playback options</h2>
-    <div style="display:flex;flex-direction:column;gap:10px;">
+  <details class="card playback-card">
+    <summary>Playback options</summary>
+    <div class="playback-inner" style="display:flex;flex-direction:column;gap:10px;">
       <div id="twitch-mode-btns" style="display:flex;gap:6px;flex-wrap:wrap;"></div>
       <div id="twitch-quality-btns" style="display:flex;gap:6px;flex-wrap:wrap;"></div>
       <div id="twitch-profile-btns" style="display:flex;gap:6px;flex-wrap:wrap;"></div>
       <div id="twitch-sync-btns" style="display:flex;gap:6px;flex-wrap:wrap;"></div>
     </div>
-  </div>
+  </details>
   <div class="card">
     <h2>Live stream</h2>
     <div style="display:flex;flex-direction:column;gap:10px;">
@@ -451,16 +457,16 @@ STATUS_HTML = """<!DOCTYPE html>
 
 <!-- ── Pluto TV tab ── -->
 <div class="tab-panel" id="tab-pluto">
-  <div class="card">
-    <h2>Playback options</h2>
-    <div style="display:flex;flex-direction:column;gap:10px;">
+  <details class="card playback-card">
+    <summary>Playback options</summary>
+    <div class="playback-inner" style="display:flex;flex-direction:column;gap:10px;">
       <div id="pluto-mode-btns" style="display:flex;gap:6px;flex-wrap:wrap;"></div>
       <div id="pluto-profile-btns" style="display:flex;gap:6px;flex-wrap:wrap;"></div>
       <div id="pluto-sync-btns" style="display:flex;gap:6px;flex-wrap:wrap;"></div>
       <input id="pluto-filter" type="text" placeholder="Filter channels…"
              style="background:var(--input-bg);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:8px 12px;font-family:monospace;">
     </div>
-  </div>
+  </details>
   <div class="card">
     <h2>Channels</h2>
     <div id="pluto-lang-btns" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px;"></div>
@@ -471,15 +477,15 @@ STATUS_HTML = """<!DOCTYPE html>
 
 <!-- ── IPTV tab ── -->
 <div class="tab-panel" id="tab-iptv">
-  <div class="card">
-    <h2>Playback options</h2>
-    <div style="display:flex;flex-direction:column;gap:10px;">
+  <details class="card playback-card">
+    <summary>Playback options</summary>
+    <div class="playback-inner" style="display:flex;flex-direction:column;gap:10px;">
       <div id="iptv-mode-btns" style="display:flex;gap:6px;flex-wrap:wrap;"></div>
       <div id="iptv-quality-btns" style="display:flex;gap:6px;flex-wrap:wrap;"></div>
       <div id="iptv-profile-btns" style="display:flex;gap:6px;flex-wrap:wrap;"></div>
       <div id="iptv-sync-btns" style="display:flex;gap:6px;flex-wrap:wrap;"></div>
     </div>
-  </div>
+  </details>
   <div class="card">
     <h2>IPTV lists</h2>
     <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:14px;">
@@ -509,15 +515,15 @@ STATUS_HTML = """<!DOCTYPE html>
 
 <!-- ── Acestream tab ── -->
 <div class="tab-panel" id="tab-ace">
-  <div class="card">
-    <h2>Playback options</h2>
-    <div style="display:flex;flex-direction:column;gap:8px;">
+  <details class="card playback-card">
+    <summary>Playback options</summary>
+    <div class="playback-inner" style="display:flex;flex-direction:column;gap:8px;">
       <div id="ace-mode-btns" style="display:flex;gap:6px;flex-wrap:wrap;"></div>
       <div id="ace-quality-btns" style="display:flex;gap:6px;flex-wrap:wrap;"></div>
       <div id="ace-profile-btns" style="display:flex;gap:6px;flex-wrap:wrap;"></div>
       <div id="ace-sync-btns" style="display:flex;gap:6px;flex-wrap:wrap;"></div>
     </div>
-  </div>
+  </details>
   <div class="card">
     <h2>Stream by content ID</h2>
     <p style="font-size:.85rem;color:var(--muted);margin-bottom:12px;">
@@ -550,9 +556,9 @@ STATUS_HTML = """<!DOCTYPE html>
 
 <!-- ── Info tab ── -->
 <div class="tab-panel" id="tab-local">
-  <div class="card">
-    <h2>Playback options</h2>
-    <div style="display:flex;flex-direction:column;gap:10px;">
+  <details class="card playback-card">
+    <summary>Playback options</summary>
+    <div class="playback-inner" style="display:flex;flex-direction:column;gap:10px;">
       <div id="local-mode-btns" style="display:flex;gap:6px;flex-wrap:wrap;"></div>
       <div id="local-profile-btns" style="display:flex;gap:6px;flex-wrap:wrap;"></div>
       <div id="local-sync-btns" style="display:flex;gap:6px;flex-wrap:wrap;"></div>
@@ -563,10 +569,11 @@ STATUS_HTML = """<!DOCTYPE html>
         </button>
       </div>
     </div>
-    <p style="font-size:.82rem;color:var(--muted);margin-top:12px;">
-      Folder: <code style="color:var(--text);">{{local_media_dir}}</code>
-    </p>
-  </div>
+      <p style="font-size:.82rem;color:var(--muted);margin-top:12px;">
+        Folder: <code style="color:var(--text);">{{local_media_dir}}</code>
+      </p>
+    </div>
+  </details>
   <div class="card">
     <h2>Video files</h2>
     <div class="feed-status" id="local-status">Open this tab to load local videos.</div>
@@ -2014,6 +2021,7 @@ WATCH_HTML = """<!DOCTYPE html>
   *{margin:0;padding:0;box-sizing:border-box;}
   body{background:var(--dark);color:var(--text);font-family:'Rajdhani',sans-serif;min-height:100vh;display:flex;flex-direction:column;align-items:center;padding:16px;}
   .top{width:100%;max-width:1280px;display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;gap:12px;flex-wrap:wrap;}
+  .top-actions{display:flex;align-items:center;gap:10px;}
   .title{font-family:'Orbitron',monospace;letter-spacing:.1em;color:var(--red);font-size:1rem;}
   .back{color:var(--red);text-decoration:none;font-family:monospace;}
   .wrap{width:100%;max-width:1280px;background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:10px;}
@@ -2037,12 +2045,36 @@ WATCH_HTML = """<!DOCTYPE html>
   .sync-btn{background:var(--panel);border:1px solid var(--border);color:var(--text);font-family:'Rajdhani',sans-serif;font-size:1rem;font-weight:500;padding:6px 14px;border-radius:6px;cursor:pointer;}
   .sync-btn:hover{border-color:var(--red);color:var(--red);}
   .sync-val{font-family:monospace;font-size:.95rem;color:var(--red);min-width:60px;text-align:center;}
+  .icon-btn{background:var(--panel);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:8px 12px;font-family:'Orbitron',monospace;cursor:pointer;}
+  .settings-panel{display:none;margin:0 auto 12px;width:100%;max-width:1280px;background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:16px;gap:12px;}
+  .settings-panel.open{display:flex;flex-direction:column;}
+  .settings-grid{display:flex;flex-direction:column;gap:10px;}
+  .settings-row{display:flex;gap:6px;flex-wrap:wrap;}
+  .settings-label-strong{font-family:'Orbitron',monospace;font-size:.7rem;letter-spacing:.1em;color:var(--muted);text-transform:uppercase;}
+  .settings-apply{align-self:flex-start;background:var(--red);color:#fff;border:0;border-radius:8px;padding:10px 16px;font-family:'Orbitron',monospace;letter-spacing:.08em;cursor:pointer;}
 </style>
 </head>
 <body>
   <div class="top">
     <div class="title">MJPEG + AUDIO</div>
-    <a class="back" href="/">← Back</a>
+    <div class="top-actions">
+      <button class="icon-btn" id="fullscreenBtn" type="button">⛶</button>
+      <button class="icon-btn" id="settingsBtn" type="button">⚙</button>
+      <a class="back" href="/">← Back</a>
+    </div>
+  </div>
+  <div class="settings-panel" id="settingsPanel">
+    <div class="settings-grid">
+      <div class="settings-label-strong">Playback mode</div>
+      <div class="settings-row" id="modeBtns"></div>
+      <div class="settings-label-strong">Source quality</div>
+      <div class="settings-row" id="qualityBtns"></div>
+      <div class="settings-label-strong">Output profile</div>
+      <div class="settings-row" id="profileBtns"></div>
+      <div class="settings-label-strong">Audio delay</div>
+      <div class="settings-row" id="syncBtns"></div>
+    </div>
+    <button class="settings-apply" id="applySettings" type="button">Apply changes</button>
   </div>
   <div class="wrap">
     <img id="mjpeg" alt="Live MJPEG stream">
@@ -2081,6 +2113,7 @@ WATCH_HTML = """<!DOCTYPE html>
   var videoUrl = "{{video_url}}";
   var videoQuality = "{{video_quality}}";
   var localFile = "{{local_file}}";
+  var params = new URLSearchParams(window.location.search);
   if (!sid) {
     window.location.href = "/";
     return;
@@ -2097,6 +2130,76 @@ WATCH_HTML = """<!DOCTYPE html>
   var resumeText   = document.getElementById("resume-text");
   var resumeYes    = document.getElementById("resume-yes");
   var resumeNo     = document.getElementById("resume-no");
+  var settingsBtn  = document.getElementById("settingsBtn");
+  var settingsPanel= document.getElementById("settingsPanel");
+  var fullscreenBtn= document.getElementById("fullscreenBtn");
+
+  function createButtonGroup(containerId, options, currentValue) {
+    var container = document.getElementById(containerId);
+    var state = { value: currentValue || "" };
+    options.forEach(function (opt) {
+      var btn = document.createElement("button");
+      btn.type = "button";
+      btn.textContent = opt.label;
+      btn.setAttribute("data-value", opt.value);
+      btn.style.cssText = "font-family:'Orbitron',monospace;font-size:.7rem;letter-spacing:.08em;padding:6px 12px;border-radius:6px;border:1px solid var(--border);background:transparent;color:var(--text);cursor:pointer;";
+      btn.addEventListener("click", function () {
+        state.value = opt.value;
+        refresh();
+      });
+      container.appendChild(btn);
+    });
+    function refresh() {
+      Array.prototype.forEach.call(container.querySelectorAll("button"), function (btn) {
+        var active = btn.getAttribute("data-value") === state.value;
+        btn.style.background = active ? "var(--red)" : "transparent";
+        btn.style.color = active ? "#fff" : "var(--text)";
+      });
+    }
+    refresh();
+    return state;
+  }
+
+  var modeState = createButtonGroup("modeBtns", [
+    { value: "ogv", label: "OGV" }, { value: "mp4", label: "MP4" },
+    { value: "mjpeg", label: "MJPEG" }, { value: "audio", label: "Audio" }
+  ], params.get("mode") || "mjpeg");
+  var qualityState = createButtonGroup("qualityBtns", [
+    { value: "auto", label: "Auto" }, { value: "2160", label: "4K" }, { value: "1440", label: "1440p" },
+    { value: "1080", label: "1080p" }, { value: "720", label: "720p" }, { value: "480", label: "480p" },
+    { value: "360", label: "360p" }, { value: "240", label: "240p" }, { value: "144", label: "144p" }
+  ], params.get("quality") || videoQuality || "auto");
+  var profileState = createButtonGroup("profileBtns", [
+    { value: "auto", label: "Auto" }, { value: "2160", label: "4K" }, { value: "1440", label: "1440p" },
+    { value: "1080", label: "1080p" }, { value: "720", label: "720p" }, { value: "480", label: "480p" },
+    { value: "360", label: "360p" }
+  ], params.get("profile") || "auto");
+  var syncState = createButtonGroup("syncBtns", [
+    { value: "0", label: "0s" }, { value: "500", label: "0.5s" }, { value: "1000", label: "1s" },
+    { value: "1500", label: "1.5s" }, { value: "2000", label: "2s" }, { value: "2500", label: "2.5s" },
+    { value: "3000", label: "3s" }, { value: "3500", label: "3.5s" }, { value: "4000", label: "4s" }
+  ], params.get("sync") || syncMs || "0");
+
+  settingsBtn.addEventListener("click", function () {
+    settingsPanel.classList.toggle("open");
+  });
+  document.getElementById("applySettings").addEventListener("click", function () {
+    var next = new URLSearchParams(window.location.search);
+    next.set("mode", modeState.value);
+    if (qualityState.value === "auto") next.delete("quality"); else next.set("quality", qualityState.value);
+    if (profileState.value === "auto" || modeState.value === "audio") next.delete("profile"); else next.set("profile", profileState.value);
+    if (syncState.value === "0") next.delete("sync"); else next.set("sync", syncState.value);
+    window.location.href = window.location.pathname + "?" + next.toString();
+  });
+  fullscreenBtn.addEventListener("click", function () {
+    if (!document.fullscreenElement) {
+      var req = img.requestFullscreen || img.webkitRequestFullscreen || img.msRequestFullscreen;
+      if (req) req.call(img);
+    } else {
+      var exit = document.exitFullscreen || document.webkitExitFullscreen || document.msExitFullscreen;
+      if (exit) exit.call(document);
+    }
+  });
 
   // Start audio first so its pipeline is already running and buffered.
   audio.src = "/audio?sid=" + encodeURIComponent(sid);
@@ -2221,7 +2324,6 @@ WATCH_HTML = """<!DOCTYPE html>
   // ── Seek controls ────────────────────────────────────────────────────────
   // Read seek offset already applied (so accumulated offset stays correct
   // if the user seeks multiple times).
-  var params = new URLSearchParams(window.location.search);
   var baseSeekS = parseInt("{{seek_s}}", 10) || parseInt(params.get("seek") || "0", 10) || 0;
   var pendingOffsetS = 0;
   var seekTimer = null;
@@ -2253,16 +2355,9 @@ WATCH_HTML = """<!DOCTYPE html>
       var targetSeek = Math.max(0, baseSeekS + pendingOffsetS);
       seekPending.textContent = "Reloading\u2026";
       seekCancel.style.display = "none";
-      var watchUrl;
-      if (localFile) {
-        watchUrl = "/local_watch?file=" + encodeURIComponent(localFile) + "&seek=" + targetSeek;
-        if (syncMs && syncMs !== "0") watchUrl += "&sync=" + encodeURIComponent(syncMs);
-      } else {
-        watchUrl = "/watch?url=" + encodeURIComponent(videoUrl) + "&seek=" + targetSeek;
-        if (videoQuality) watchUrl += "&quality=" + encodeURIComponent(videoQuality);
-        if (syncMs && syncMs !== "0") watchUrl += "&sync=" + encodeURIComponent(syncMs);
-      }
-      window.location.href = watchUrl;
+      var next = new URLSearchParams(window.location.search);
+      next.set("seek", targetSeek);
+      window.location.href = window.location.pathname + "?" + next.toString();
     }, SEEK_DEBOUNCE_MS);
   }
 
@@ -2330,15 +2425,9 @@ WATCH_HTML = """<!DOCTYPE html>
   var progressKey = videoUrl || localFile;
 
   function buildResumeUrl(posS) {
-    if (localFile) {
-      var u = "/local_watch?file=" + encodeURIComponent(localFile) + "&seek=" + posS;
-      if (syncMs && syncMs !== "0") u += "&sync=" + encodeURIComponent(syncMs);
-      return u;
-    }
-    var u = "/watch?url=" + encodeURIComponent(videoUrl) + "&seek=" + posS;
-    if (videoQuality) u += "&quality=" + encodeURIComponent(videoQuality);
-    if (syncMs && syncMs !== "0") u += "&sync=" + encodeURIComponent(syncMs);
-    return u;
+    var next = new URLSearchParams(window.location.search);
+    next.set("seek", posS);
+    return window.location.pathname + "?" + next.toString();
   }
 
   function saveProgress(posS) {
@@ -2424,6 +2513,7 @@ AUDIO_WATCH_HTML = """<!DOCTYPE html>
   *{margin:0;padding:0;box-sizing:border-box;}
   body{background:var(--dark);color:var(--text);font-family:'Rajdhani',sans-serif;min-height:100vh;display:flex;flex-direction:column;align-items:center;padding:16px;}
   .top{width:100%;max-width:720px;display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;gap:12px;}
+  .top-actions{display:flex;align-items:center;gap:10px;}
   .title{font-family:'Orbitron',monospace;letter-spacing:.1em;color:var(--red);font-size:1rem;}
   .back{color:var(--red);text-decoration:none;font-family:monospace;}
   .wrap{width:100%;max-width:720px;background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:28px 24px;display:flex;flex-direction:column;gap:14px;}
@@ -2439,12 +2529,35 @@ AUDIO_WATCH_HTML = """<!DOCTYPE html>
   .seek-label{font-family:'Orbitron',monospace;font-size:.65rem;letter-spacing:.1em;color:var(--muted);text-transform:uppercase;}
   .seek-pending{font-family:monospace;font-size:.85rem;color:var(--red);}
   .seek-cancel{background:none;border:none;color:#888;font-size:.8rem;cursor:pointer;text-decoration:underline;padding:0;}
+  .icon-btn{background:var(--panel);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:8px 12px;font-family:'Orbitron',monospace;cursor:pointer;}
+  .settings-panel{display:none;margin:0 auto 12px;width:100%;max-width:720px;background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:16px;gap:12px;}
+  .settings-panel.open{display:flex;flex-direction:column;}
+  .settings-grid{display:flex;flex-direction:column;gap:10px;}
+  .settings-row{display:flex;gap:6px;flex-wrap:wrap;}
+  .settings-label-strong{font-family:'Orbitron',monospace;font-size:.7rem;letter-spacing:.1em;color:var(--muted);text-transform:uppercase;}
+  .settings-apply{align-self:flex-start;background:var(--red);color:#fff;border:0;border-radius:8px;padding:10px 16px;font-family:'Orbitron',monospace;letter-spacing:.08em;cursor:pointer;}
 </style>
 </head>
 <body>
   <div class="top">
     <div class="title">AUDIO STREAM</div>
-    <a class="back" href="/">← Back</a>
+    <div class="top-actions">
+      <button class="icon-btn" id="settingsBtn" type="button">⚙</button>
+      <a class="back" href="/">← Back</a>
+    </div>
+  </div>
+  <div class="settings-panel" id="settingsPanel">
+    <div class="settings-grid">
+      <div class="settings-label-strong">Playback mode</div>
+      <div class="settings-row" id="modeBtns"></div>
+      <div class="settings-label-strong">Source quality</div>
+      <div class="settings-row" id="qualityBtns"></div>
+      <div class="settings-label-strong">Output profile</div>
+      <div class="settings-row" id="profileBtns"></div>
+      <div class="settings-label-strong">Audio delay</div>
+      <div class="settings-row" id="syncBtns"></div>
+    </div>
+    <button class="settings-apply" id="applySettings" type="button">Apply changes</button>
   </div>
   <div class="wrap">
     <div id="stream-title" class="stream-title"></div>
@@ -2470,6 +2583,7 @@ AUDIO_WATCH_HTML = """<!DOCTYPE html>
   var videoUrl   = "{{video_url}}";
   var seekS      = parseInt("{{seek_s}}", 10) || 0;
   var durationS  = parseInt("{{duration_s}}", 10) || 0;  // 0 = unknown/live
+  var params     = new URLSearchParams(window.location.search);
   if (!sid) { window.location.href = "/"; return; }
 
   var audio      = document.getElementById("audio");
@@ -2481,6 +2595,66 @@ AUDIO_WATCH_HTML = """<!DOCTYPE html>
   var seekBar    = document.getElementById("seek-bar");
   var seekPend   = document.getElementById("seek-pending");
   var seekCancel = document.getElementById("seek-cancel");
+  var settingsBtn = document.getElementById("settingsBtn");
+  var settingsPanel = document.getElementById("settingsPanel");
+
+  function createButtonGroup(containerId, options, currentValue) {
+    var container = document.getElementById(containerId);
+    var state = { value: currentValue || "" };
+    options.forEach(function (opt) {
+      var btn = document.createElement("button");
+      btn.type = "button";
+      btn.textContent = opt.label;
+      btn.setAttribute("data-value", opt.value);
+      btn.style.cssText = "font-family:'Orbitron',monospace;font-size:.7rem;letter-spacing:.08em;padding:6px 12px;border-radius:6px;border:1px solid var(--border);background:transparent;color:var(--text);cursor:pointer;";
+      btn.addEventListener("click", function () {
+        state.value = opt.value;
+        refresh();
+      });
+      container.appendChild(btn);
+    });
+    function refresh() {
+      Array.prototype.forEach.call(container.querySelectorAll("button"), function (btn) {
+        var active = btn.getAttribute("data-value") === state.value;
+        btn.style.background = active ? "var(--red)" : "transparent";
+        btn.style.color = active ? "#fff" : "var(--text)";
+      });
+    }
+    refresh();
+    return state;
+  }
+
+  var modeState = createButtonGroup("modeBtns", [
+    { value: "ogv", label: "OGV" }, { value: "mp4", label: "MP4" },
+    { value: "mjpeg", label: "MJPEG" }, { value: "audio", label: "Audio" }
+  ], params.get("mode") || "audio");
+  var qualityState = createButtonGroup("qualityBtns", [
+    { value: "auto", label: "Auto" }, { value: "2160", label: "4K" }, { value: "1440", label: "1440p" },
+    { value: "1080", label: "1080p" }, { value: "720", label: "720p" }, { value: "480", label: "480p" },
+    { value: "360", label: "360p" }, { value: "240", label: "240p" }, { value: "144", label: "144p" }
+  ], params.get("quality") || "auto");
+  var profileState = createButtonGroup("profileBtns", [
+    { value: "auto", label: "Auto" }, { value: "2160", label: "4K" }, { value: "1440", label: "1440p" },
+    { value: "1080", label: "1080p" }, { value: "720", label: "720p" }, { value: "480", label: "480p" },
+    { value: "360", label: "360p" }
+  ], params.get("profile") || "auto");
+  var syncState = createButtonGroup("syncBtns", [
+    { value: "0", label: "0s" }, { value: "500", label: "0.5s" }, { value: "1000", label: "1s" },
+    { value: "1500", label: "1.5s" }, { value: "2000", label: "2s" }, { value: "2500", label: "2.5s" },
+    { value: "3000", label: "3s" }, { value: "3500", label: "3.5s" }, { value: "4000", label: "4s" }
+  ], params.get("sync") || syncMs || "0");
+
+  settingsBtn.addEventListener("click", function () {
+    settingsPanel.classList.toggle("open");
+  });
+  document.getElementById("applySettings").addEventListener("click", function () {
+    var next = new URLSearchParams(window.location.search);
+    next.set("mode", modeState.value);
+    if (qualityState.value === "auto") next.delete("quality"); else next.set("quality", qualityState.value);
+    if (profileState.value === "auto" || modeState.value === "audio") next.delete("profile"); else next.set("profile", profileState.value);
+    if (syncState.value === "0") next.delete("sync"); else next.set("sync", syncState.value);
+    window.location.href = window.location.pathname + "?" + next.toString();
+  });
 
   audio.src = "/audio?sid=" + encodeURIComponent(sid) + "&sync=" + encodeURIComponent(syncMs);
   audio.preload = "auto";
@@ -2605,18 +2779,43 @@ MP4_WATCH_HTML = """<!DOCTYPE html>
   *{margin:0;padding:0;box-sizing:border-box;}
   body{background:var(--dark);color:var(--text);font-family:'Rajdhani',sans-serif;min-height:100vh;display:flex;flex-direction:column;align-items:center;padding:16px;}
   .top{width:100%;max-width:1280px;display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;gap:12px;}
+  .top-actions{display:flex;align-items:center;gap:10px;}
   .title{font-family:'Orbitron',monospace;letter-spacing:.1em;color:var(--red);font-size:1rem;}
   .back{color:var(--red);text-decoration:none;font-family:monospace;}
   .wrap{width:100%;max-width:1280px;background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:10px;}
   video{width:100%;height:auto;display:block;background:black;border-radius:8px;}
   .stream-title{font-size:.95rem;color:var(--text);font-family:'Rajdhani',sans-serif;font-weight:500;padding:8px 4px 2px;letter-spacing:.02em;min-height:1.4em;}
   .err{margin-top:10px;padding:12px 16px;background:#160d11;border:1px solid var(--red);border-radius:8px;font-family:monospace;font-size:.9rem;color:#f0b5bf;display:none;}
+  .icon-btn{background:var(--panel);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:8px 12px;font-family:'Orbitron',monospace;cursor:pointer;}
+  .settings-panel{display:none;margin:0 auto 12px;width:100%;max-width:1280px;background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:16px;gap:12px;}
+  .settings-panel.open{display:flex;flex-direction:column;}
+  .settings-grid{display:flex;flex-direction:column;gap:10px;}
+  .settings-row{display:flex;gap:6px;flex-wrap:wrap;}
+  .settings-label{font-family:'Orbitron',monospace;font-size:.7rem;letter-spacing:.1em;color:#888899;text-transform:uppercase;}
+  .settings-apply{align-self:flex-start;background:var(--red);color:#fff;border:0;border-radius:8px;padding:10px 16px;font-family:'Orbitron',monospace;letter-spacing:.08em;cursor:pointer;}
 </style>
 </head>
 <body>
   <div class="top">
     <div class="title">MP4 STREAM</div>
-    <a class="back" href="/">← Back</a>
+    <div class="top-actions">
+      <button class="icon-btn" id="fullscreenBtn" type="button">⛶</button>
+      <button class="icon-btn" id="settingsBtn" type="button">⚙</button>
+      <a class="back" href="/">← Back</a>
+    </div>
+  </div>
+  <div class="settings-panel" id="settingsPanel">
+    <div class="settings-grid">
+      <div class="settings-label">Playback mode</div>
+      <div class="settings-row" id="modeBtns"></div>
+      <div class="settings-label">Source quality</div>
+      <div class="settings-row" id="qualityBtns"></div>
+      <div class="settings-label">Output profile</div>
+      <div class="settings-row" id="profileBtns"></div>
+      <div class="settings-label">Audio delay</div>
+      <div class="settings-row" id="syncBtns"></div>
+    </div>
+    <button class="settings-apply" id="applySettings" type="button">Apply changes</button>
   </div>
   <div class="wrap">
     <video id="video" controls autoplay playsinline>
@@ -2629,10 +2828,86 @@ MP4_WATCH_HTML = """<!DOCTYPE html>
 (function () {
   var vid = document.getElementById("video");
   var errEl = document.getElementById("err");
+  var settingsBtn = document.getElementById("settingsBtn");
+  var settingsPanel = document.getElementById("settingsPanel");
+  var fullscreenBtn = document.getElementById("fullscreenBtn");
   var errMsg = "{{error_msg}}";
   if (errMsg) { errEl.style.display = "block"; vid.style.display = "none"; return; }
 
   var directUrl = "{{direct_url}}";
+  var params = new URLSearchParams(window.location.search);
+
+  function createButtonGroup(containerId, options, currentValue) {
+    var container = document.getElementById(containerId);
+    var state = { value: currentValue || "" };
+    options.forEach(function (opt) {
+      var btn = document.createElement("button");
+      btn.type = "button";
+      btn.textContent = opt.label;
+      btn.setAttribute("data-value", opt.value);
+      btn.style.cssText = "font-family:'Orbitron',monospace;font-size:.7rem;letter-spacing:.08em;padding:6px 12px;border-radius:6px;border:1px solid var(--border);background:transparent;color:var(--text);cursor:pointer;";
+      btn.addEventListener("click", function () {
+        state.value = opt.value;
+        refresh();
+      });
+      container.appendChild(btn);
+    });
+    function refresh() {
+      Array.prototype.forEach.call(container.querySelectorAll("button"), function (btn) {
+        var active = btn.getAttribute("data-value") === state.value;
+        btn.style.background = active ? "var(--red)" : "transparent";
+        btn.style.color = active ? "#fff" : "var(--text)";
+      });
+    }
+    refresh();
+    state.refresh = refresh;
+    return state;
+  }
+
+  var modeState = createButtonGroup("modeBtns", [
+    { value: "ogv", label: "OGV" },
+    { value: "mp4", label: "MP4" },
+    { value: "mjpeg", label: "MJPEG" },
+    { value: "audio", label: "Audio" }
+  ], params.get("mode") || "mp4");
+  var qualityState = createButtonGroup("qualityBtns", [
+    { value: "auto", label: "Auto" }, { value: "2160", label: "4K" }, { value: "1440", label: "1440p" },
+    { value: "1080", label: "1080p" }, { value: "720", label: "720p" }, { value: "480", label: "480p" },
+    { value: "360", label: "360p" }, { value: "240", label: "240p" }, { value: "144", label: "144p" }
+  ], params.get("quality") || "auto");
+  var profileState = createButtonGroup("profileBtns", [
+    { value: "auto", label: "Auto" }, { value: "2160", label: "4K" }, { value: "1440", label: "1440p" },
+    { value: "1080", label: "1080p" }, { value: "720", label: "720p" }, { value: "480", label: "480p" },
+    { value: "360", label: "360p" }
+  ], params.get("profile") || "auto");
+  var syncState = createButtonGroup("syncBtns", [
+    { value: "0", label: "0s" }, { value: "500", label: "0.5s" }, { value: "1000", label: "1s" },
+    { value: "1500", label: "1.5s" }, { value: "2000", label: "2s" }, { value: "2500", label: "2.5s" },
+    { value: "3000", label: "3s" }, { value: "3500", label: "3.5s" }, { value: "4000", label: "4s" }
+  ], params.get("sync") || "0");
+
+  settingsBtn.addEventListener("click", function () {
+    settingsPanel.classList.toggle("open");
+  });
+  document.getElementById("applySettings").addEventListener("click", function () {
+    var next = new URLSearchParams(window.location.search);
+    next.set("mode", modeState.value);
+    if (qualityState.value === "auto") next.delete("quality"); else next.set("quality", qualityState.value);
+    if (profileState.value === "auto" || modeState.value === "audio") next.delete("profile"); else next.set("profile", profileState.value);
+    if (syncState.value === "0") next.delete("sync"); else next.set("sync", syncState.value);
+    window.location.href = window.location.pathname + "?" + next.toString();
+  });
+
+  function toggleFullscreen() {
+    if (!document.fullscreenElement) {
+      var target = vid.requestFullscreen || vid.webkitRequestFullscreen || vid.msRequestFullscreen;
+      if (target) target.call(vid);
+    } else {
+      var exit = document.exitFullscreen || document.webkitExitFullscreen || document.msExitFullscreen;
+      if (exit) exit.call(document);
+    }
+  }
+  fullscreenBtn.addEventListener("click", toggleFullscreen);
 
   if (directUrl.indexOf("/stream_fmp4") !== -1) {
     if (!window.MediaSource) {
@@ -2720,7 +2995,8 @@ OGV_WATCH_HTML = """<!DOCTYPE html>
   .stage{position:fixed;inset:0;background:#000;display:flex;align-items:center;justify-content:center;}
   #player{width:100%;height:100%;display:block;background:#000;}
   .top,.controls{position:fixed;left:0;right:0;z-index:10;transition:opacity .18s;}
-  .top{top:0;padding:14px 18px;background:linear-gradient(to bottom,rgba(0,0,0,.82),rgba(0,0,0,0));display:flex;align-items:center;gap:14px;}
+  .top{top:0;padding:14px 18px;background:linear-gradient(to bottom,rgba(0,0,0,.82),rgba(0,0,0,0));display:flex;align-items:center;justify-content:space-between;gap:14px;}
+  .top-left,.top-right{display:flex;align-items:center;gap:14px;}
   .back{color:#fff;text-decoration:none;background:rgba(255,255,255,.14);border:1px solid rgba(255,255,255,.18);border-radius:7px;padding:10px 13px;font-size:16px;}
   .title{font-weight:700;font-size:18px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-shadow:0 1px 2px #000;}
   .center{position:fixed;inset:0;z-index:9;display:flex;align-items:center;justify-content:center;gap:28px;pointer-events:none;}
@@ -2734,14 +3010,44 @@ OGV_WATCH_HTML = """<!DOCTYPE html>
   .track{width:100%;height:6px;background:rgba(255,255,255,.22);border-radius:99px;overflow:hidden;}
   .fill{height:100%;width:0;background:var(--red);}
   .status{position:fixed;left:18px;bottom:78px;z-index:12;max-width:calc(100vw - 36px);padding:10px 12px;background:rgba(20,0,5,.9);border:1px solid rgba(227,25,55,.55);border-radius:7px;color:#ffd2d8;font-family:monospace;font-size:13px;white-space:pre-wrap;display:none;}
+  .icon-btn{min-width:48px;height:44px;border-radius:7px;border:0;color:#fff;background:rgba(255,255,255,.16);backdrop-filter:blur(8px);cursor:pointer;font-size:17px;}
+  .settings-panel{position:fixed;top:76px;right:18px;z-index:14;display:none;min-width:320px;max-width:min(420px,calc(100vw - 36px));padding:14px;background:rgba(10,10,16,.95);border:1px solid rgba(255,255,255,.15);border-radius:10px;box-shadow:0 18px 40px rgba(0,0,0,.45);}
+  .settings-panel.open{display:flex;flex-direction:column;gap:10px;}
+  .settings-label{font-family:Orbitron,monospace;font-size:11px;letter-spacing:.12em;color:var(--muted);text-transform:uppercase;}
+  .settings-row{display:flex;gap:6px;flex-wrap:wrap;}
+  .settings-chip{padding:6px 10px;border-radius:6px;border:1px solid rgba(255,255,255,.14);background:transparent;color:#fff;font-family:Orbitron,monospace;font-size:11px;letter-spacing:.08em;cursor:pointer;}
+  .settings-apply{margin-top:4px;padding:10px 12px;border-radius:8px;border:0;background:var(--red);color:#fff;font-family:Orbitron,monospace;letter-spacing:.08em;cursor:pointer;}
+  .loading-overlay{position:fixed;inset:0;z-index:11;display:none;align-items:center;justify-content:center;pointer-events:none;}
+  .loading-overlay.visible{display:flex;}
+  .loading-card{display:flex;flex-direction:column;align-items:center;gap:12px;padding:18px 22px;border-radius:14px;background:rgba(0,0,0,.72);border:1px solid rgba(255,255,255,.14);backdrop-filter:blur(10px);}
+  .spinner{width:38px;height:38px;border-radius:50%;border:3px solid rgba(255,255,255,.2);border-top-color:var(--red);animation:spin .9s linear infinite;}
+  .loading-text{font-family:Orbitron,monospace;font-size:12px;letter-spacing:.12em;text-transform:uppercase;color:#fff;text-align:center;}
+  @keyframes spin{to{transform:rotate(360deg);}}
   .hidden-ui .top,.hidden-ui .controls,.hidden-ui .center{opacity:0;pointer-events:none;}
 </style>
 </head>
 <body>
 <div class="stage" id="stage"></div>
 <div class="top">
-  <a class="back" href="/">Back</a>
-  <div class="title">{{stream_title}}</div>
+  <div class="top-left">
+    <a class="back" href="/">Back</a>
+    <div class="title">{{stream_title}}</div>
+  </div>
+  <div class="top-right">
+    <button class="icon-btn" id="fullscreenBtn" type="button">⛶</button>
+    <button class="icon-btn" id="settingsBtn" type="button">⚙</button>
+  </div>
+</div>
+<div class="settings-panel" id="settingsPanel">
+  <div class="settings-label">Playback mode</div>
+  <div class="settings-row" id="modeBtns"></div>
+  <div class="settings-label">Source quality</div>
+  <div class="settings-row" id="qualityBtns"></div>
+  <div class="settings-label">Output profile</div>
+  <div class="settings-row" id="profileBtns"></div>
+  <div class="settings-label">Audio delay</div>
+  <div class="settings-row" id="syncBtns"></div>
+  <button class="settings-apply" id="applySettings" type="button">Apply changes</button>
 </div>
 <div class="center">
   <button class="bigbtn skip" id="back15">-15</button>
@@ -2755,6 +3061,12 @@ OGV_WATCH_HTML = """<!DOCTYPE html>
   <button class="ctlbtn" id="restart">Start</button>
 </div>
 <div class="status" id="status">{{error_msg}}</div>
+<div class="loading-overlay" id="loadingOverlay">
+  <div class="loading-card">
+    <div class="spinner"></div>
+    <div class="loading-text" id="loadingText">Opening stream…</div>
+  </div>
+</div>
 <script>
 (function () {
   var streamUrl = {{stream_url_json}};
@@ -2919,16 +3231,71 @@ OGV_WATCH_HTML = """<!DOCTYPE html>
   var ctlPlay = document.getElementById("ctlPlay");
   var elapsed = document.getElementById("elapsed");
   var fill = document.getElementById("fill");
+  var settingsBtn = document.getElementById("settingsBtn");
+  var settingsPanel = document.getElementById("settingsPanel");
+  var fullscreenBtn = document.getElementById("fullscreenBtn");
+  var loadingOverlay = document.getElementById("loadingOverlay");
+  var loadingText = document.getElementById("loadingText");
   var hideTimer = null;
+  var params = new URLSearchParams(window.location.search);
 
   player.id = "player";
   player.src = streamUrl;
   stage.appendChild(player);
 
+  function createButtonGroup(containerId, options, currentValue) {
+    var container = document.getElementById(containerId);
+    var state = { value: currentValue || "" };
+    options.forEach(function (opt) {
+      var btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "settings-chip";
+      btn.textContent = opt.label;
+      btn.setAttribute("data-value", opt.value);
+      btn.addEventListener("click", function () {
+        state.value = opt.value;
+        refresh();
+      });
+      container.appendChild(btn);
+    });
+    function refresh() {
+      Array.prototype.forEach.call(container.querySelectorAll("button"), function (btn) {
+        var active = btn.getAttribute("data-value") === state.value;
+        btn.style.background = active ? "var(--red)" : "transparent";
+      });
+    }
+    refresh();
+    return state;
+  }
+
+  var modeState = createButtonGroup("modeBtns", [
+    { value: "ogv", label: "OGV" }, { value: "mp4", label: "MP4" },
+    { value: "mjpeg", label: "MJPEG" }, { value: "audio", label: "Audio" }
+  ], params.get("mode") || "ogv");
+  var qualityState = createButtonGroup("qualityBtns", [
+    { value: "auto", label: "Auto" }, { value: "2160", label: "4K" }, { value: "1440", label: "1440p" },
+    { value: "1080", label: "1080p" }, { value: "720", label: "720p" }, { value: "480", label: "480p" },
+    { value: "360", label: "360p" }, { value: "240", label: "240p" }, { value: "144", label: "144p" }
+  ], params.get("quality") || quality || "auto");
+  var profileState = createButtonGroup("profileBtns", [
+    { value: "auto", label: "Auto" }, { value: "2160", label: "4K" }, { value: "1440", label: "1440p" },
+    { value: "1080", label: "1080p" }, { value: "720", label: "720p" }, { value: "480", label: "480p" },
+    { value: "360", label: "360p" }
+  ], params.get("profile") || profile || "auto");
+  var syncState = createButtonGroup("syncBtns", [
+    { value: "0", label: "0s" }, { value: "500", label: "0.5s" }, { value: "1000", label: "1s" },
+    { value: "1500", label: "1.5s" }, { value: "2000", label: "2s" }, { value: "2500", label: "2.5s" },
+    { value: "3000", label: "3s" }, { value: "3500", label: "3.5s" }, { value: "4000", label: "4s" }
+  ], params.get("sync") || "0");
+
   function showStatus(msg) {
     if (!msg) return;
     statusEl.style.display = "block";
     statusEl.textContent = msg;
+  }
+  function setLoading(visible, message) {
+    loadingText.textContent = message || "Opening stream…";
+    loadingOverlay.classList.toggle("visible", !!visible);
   }
   showStatus({{error_msg_json}});
 
@@ -2946,6 +3313,14 @@ OGV_WATCH_HTML = """<!DOCTYPE html>
   function clearStatus() {
     statusEl.style.display = "none";
     statusEl.textContent = "";
+  }
+  function applySettings() {
+    var next = new URLSearchParams(window.location.search);
+    next.set("mode", modeState.value);
+    if (qualityState.value === "auto") next.delete("quality"); else next.set("quality", qualityState.value);
+    if (profileState.value === "auto" || modeState.value === "audio") next.delete("profile"); else next.set("profile", profileState.value);
+    if (syncState.value === "0") next.delete("sync"); else next.set("sync", syncState.value);
+    window.location.href = window.location.pathname + "?" + next.toString();
   }
   function streamDiagnosticUrl() {
     return streamUrl + (streamUrl.indexOf("?") === -1 ? "?" : "&") + "diagnostic=1";
@@ -2980,10 +3355,12 @@ OGV_WATCH_HTML = """<!DOCTYPE html>
   }
   function playNow() {
     clearStatus();
+    setLoading(true, "Opening OGV stream…");
     try {
       var p = player.play();
       if (p && p.catch) {
         p.catch(function (err) {
+          setLoading(false);
           var msg = "Tap Play to start. This browser blocks autoplay until a user gesture.";
           if (err && err.message && err.message.indexOf("error streaming") !== -1) {
             diagnoseFailure("OGV network stream failed while opening.");
@@ -2995,6 +3372,7 @@ OGV_WATCH_HTML = """<!DOCTYPE html>
         });
       }
     } catch(e) {
+      setLoading(false);
       showStatus("Playback could not start: " + (e && e.message ? e.message : e));
     }
   }
@@ -3004,12 +3382,10 @@ OGV_WATCH_HTML = """<!DOCTYPE html>
     updateButtons();
   }
   function reloadAt(pos) {
-    if (!originalUrl) return;
-    var target = "/watch?url=" + encodeURIComponent(originalUrl) +
-      "&mode=ogv&seek=" + Math.max(0, Math.floor(pos));
-    if (quality) target += "&quality=" + encodeURIComponent(quality);
-    if (profile) target += "&profile=" + encodeURIComponent(profile);
-    window.location.href = target;
+    var next = new URLSearchParams(window.location.search);
+    next.set("mode", "ogv");
+    next.set("seek", Math.max(0, Math.floor(pos)));
+    window.location.href = window.location.pathname + "?" + next.toString();
   }
   function bump(delta) {
     if (originalUrl) {
@@ -3024,6 +3400,21 @@ OGV_WATCH_HTML = """<!DOCTYPE html>
     hideTimer = setTimeout(function () { document.body.classList.add("hidden-ui"); }, 3500);
   }
 
+  settingsBtn.addEventListener("click", function () {
+    reveal();
+    settingsPanel.classList.toggle("open");
+  });
+  document.getElementById("applySettings").addEventListener("click", applySettings);
+  fullscreenBtn.addEventListener("click", function () {
+    reveal();
+    if (!document.fullscreenElement) {
+      var req = player.requestFullscreen || stage.requestFullscreen || player.webkitRequestFullscreen || stage.webkitRequestFullscreen;
+      if (req) req.call(player.requestFullscreen ? player : stage);
+    } else {
+      var exit = document.exitFullscreen || document.webkitExitFullscreen;
+      if (exit) exit.call(document);
+    }
+  });
   playBtn.addEventListener("click", togglePlay);
   ctlPlay.addEventListener("click", togglePlay);
   stage.addEventListener("click", function () { reveal(); });
@@ -3031,20 +3422,25 @@ OGV_WATCH_HTML = """<!DOCTYPE html>
   document.getElementById("fwd15").addEventListener("click", function () { bump(15); });
   document.getElementById("restart").addEventListener("click", function () { reloadAt(0); });
   player.addEventListener("play", updateButtons);
-  player.addEventListener("playing", function () { clearStatus(); updateButtons(); });
+  player.addEventListener("playing", function () { setLoading(false); clearStatus(); updateButtons(); });
+  player.addEventListener("waiting", function () { if (!player.paused) setLoading(true, "Buffering OGV stream…"); });
+  player.addEventListener("seeking", function () { setLoading(true, "Seeking…"); });
   player.addEventListener("pause", updateButtons);
-  player.addEventListener("ended", updateButtons);
+  player.addEventListener("ended", function () { setLoading(false); updateButtons(); });
   player.addEventListener("error", function () {
+    setLoading(false);
     diagnoseFailure("OGV playback failed. Try MP4 or MJPEG fallback for this source.");
   });
   window.addEventListener("unhandledrejection", function (event) {
     var reason = event && event.reason;
     if (reason && reason.name === "NotAllowedError") {
+      setLoading(false);
       showStatus("Tap Play to start. This browser blocks autoplay until a user gesture.");
       if (event.preventDefault) event.preventDefault();
       return;
     }
     if (reason && reason.message && reason.message.indexOf("error streaming") !== -1) {
+      setLoading(false);
       diagnoseFailure("OGV network stream failed while opening.");
       if (event.preventDefault) event.preventDefault();
     }
@@ -3061,6 +3457,7 @@ OGV_WATCH_HTML = """<!DOCTYPE html>
   }, 500);
 
   showStatus("Tap Play to start.");
+  setLoading(false);
   reveal();
 })();
 </script>
